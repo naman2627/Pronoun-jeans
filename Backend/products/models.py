@@ -19,7 +19,7 @@ class Product(models.Model):
         Category, on_delete=models.SET_NULL, null=True, related_name="products"
     )
     name = models.CharField(max_length=255)
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField(unique=True, max_length=255)
     description = models.TextField(blank=True)
     fabric_details = models.TextField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
