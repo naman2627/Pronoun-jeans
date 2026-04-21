@@ -50,14 +50,28 @@ const ProductDetail = () => {
   const handleBulkAdd = async () => {
     setError('');
     setSuccess(false);
-    const itemsToAdd = Object.entries(quantities).filter(([, qty]) => qty > 0);
-    if (itemsToAdd.length === 0) { setError('Please enter a quantity for at least one variation.'); return; }
-    if (totalSelected < product.moq) { setError(`Minimum order quantity is ${product.moq} units. You selected ${totalSelected}.`); return; }
+    
+    const itemsToAdd = Object.entries(quantities)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, qty]) => ({ variation_id: parseInt(id), quantity: qty }));
+
+    if (itemsToAdd.length === 0) { 
+      setError('Please enter a quantity for at least one variation.'); 
+      return; 
+    }
+    
+    if (totalSelected < product.moq) { 
+      setError(`Minimum order quantity is ${product.moq} units. You selected ${totalSelected}.`); 
+      return; 
+    }
+    
     setSubmitting(true);
     try {
-      await Promise.all(itemsToAdd.map(([id, qty]) =>
-        api.post('orders/cart/update/', { variation_id: parseInt(id), quantity: qty })
-      ));
+      await api.post('orders/cart/update/', { 
+        product_id: product.id, 
+        items: itemsToAdd 
+      });
+      
       setSuccess(true);
       setQuantities({});
     } catch (err) {
@@ -85,10 +99,7 @@ const ProductDetail = () => {
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
 
-        {/* ── Main grid: image+meta | table ── */}
         <div className="flex flex-col lg:flex-row gap-8 items-start">
-
-          {/* Left — fixed width */}
           <div className="w-full lg:w-72 xl:w-80 shrink-0">
             <div className="rounded-2xl overflow-hidden bg-secondary border border-white/5">
               <img
@@ -120,10 +131,8 @@ const ProductDetail = () => {
             </div>
           </div>
 
-          {/* Right — table fills rest */}
           <div className="flex-1 min-w-0">
             <div className="bg-secondary rounded-2xl border border-white/5 overflow-hidden">
-
               <div className="px-5 py-3.5 border-b border-white/5 flex items-center justify-between">
                 <h2 className="text-white text-sm font-bold">Bulk Order Table</h2>
                 {totalSelected > 0 && (
@@ -195,7 +204,6 @@ const ProductDetail = () => {
               </div>
             </div>
 
-            {/* Description below table */}
             {product.description && (
               <div className="mt-6 bg-secondary rounded-2xl border border-white/5 p-5">
                 <h3 className="text-white text-sm font-bold mb-3">Product Details</h3>

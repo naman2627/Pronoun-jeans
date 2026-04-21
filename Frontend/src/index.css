@@ -1,1 +1,20 @@
 @import "tailwindcss";
+
+/* 1. Define the custom colors for the B2B Dark Theme */
+@theme {
+  --color-primary: #09090b;   /* Deep rich black for the main background */
+  --color-secondary: #18181b; /* Slightly lighter charcoal for cards and tables */
+  --color-accent: #a855f7;    /* Premium purple for badges, buttons, and highlights */
+}
+
+/* 2. Force the entire app to use the dark background by default */
+@layer base {
+  html, body {
+    background-color: var(--color-primary);
+    color: #ffffff;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+  }
+}
