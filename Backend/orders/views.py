@@ -1,5 +1,3 @@
-# Backend/orders/views.py
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -7,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 
 from .models import Cart, CartItem, Order, OrderItem
-from products.models import ProductVariation
+from products.models import Product, ProductVariation
 from .serializers import CartSerializer, OrderSerializer
 
 
@@ -23,44 +21,73 @@ class CartDetailView(APIView):
 class CartItemUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request):
-        variation_id = request.data.get('variation_id')
-        quantity = request.data.get('quantity')
+        product_id = request.data.get('product_id')
+        items = request.data.get('items', [])
 
-        if variation_id is None or quantity is None:
+        if not product_id or not items:
             return Response(
-                {'error': 'variation_id and quantity are required.'},
+                {'error': 'product_id and items array are required for bulk add.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        total_quantity = sum(int(item.get('quantity', 0)) for item in items if int(item.get('quantity', 0)) > 0)
+
+        if total_quantity == 0:
+            return Response({'error': 'No valid quantities provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            quantity = int(quantity)
-            variation = ProductVariation.objects.select_related('product').get(pk=variation_id)
-        except (ValueError, ProductVariation.DoesNotExist):
-            return Response({'error': 'Invalid variation_id.'}, status=status.HTTP_400_BAD_REQUEST)
+            product = Product.objects.get(pk=product_id)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if total_quantity < product.moq:
+            return Response(
+                {'error': f'Total quantity ({total_quantity}) must be >= MOQ ({product.moq}) for this product.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         cart, _ = Cart.objects.get_or_create(user=request.user)
 
-        if quantity == 0:
-            CartItem.objects.filter(cart=cart, variation=variation).delete()
-            return Response({'message': 'Item removed from cart.'}, status=status.HTTP_200_OK)
+        for item in items:
+            variation_id = item.get('variation_id')
+            quantity = int(item.get('quantity', 0))
 
-        if quantity < variation.product.moq:
-            return Response(
-                {'error': f'Quantity must be >= MOQ ({variation.product.moq}) for this product.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            if quantity > 0:
+                try:
+                    variation = ProductVariation.objects.get(pk=variation_id, product=product)
+                    CartItem.objects.update_or_create(
+                        cart=cart,
+                        variation=variation,
+                        defaults={'quantity': quantity}
+                    )
+                except ProductVariation.DoesNotExist:
+                    continue
 
-        cart_item, created = CartItem.objects.update_or_create(
-            cart=cart,
-            variation=variation,
-            defaults={'quantity': quantity}
-        )
+        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
 
-        return Response(
-            CartSerializer(cart).data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
-        )
+
+class CartItemDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def patch(self, request, pk):
+        try:
+            item = CartItem.objects.select_related('cart').get(pk=pk, cart__user=request.user)
+        except CartItem.DoesNotExist:
+            return Response({'error': 'Cart item not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        quantity = int(request.data.get('quantity', 1))
+
+        if quantity <= 0:
+            item.delete()
+        else:
+            item.quantity = quantity
+            item.save()
+
+        cart = Cart.objects.prefetch_related('items__variation').get(user=request.user)
+        return Response(CartSerializer(cart).data)
 
 
 class CheckoutView(APIView):
