@@ -1,38 +1,60 @@
-import React, { useEffect, useState } from 'react';
-import { FileText, Loader } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { FileText, Loader, Plus } from 'lucide-react';
 import api from '../../api/axios';
+import LogSampleModal from '../../components/agent/LogSampleModal';
 
 const fmt = (val) =>
   `₹${parseFloat(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const AgentSampleOrders = () => {
-  const [samples, setSamples] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
+  const [samples, setSamples]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
+  const fetchSamples = useCallback(() => {
+    setLoading(true);
     api.get('orders/agent/sample-orders/')
       .then(res => setSamples(res.data?.results ?? res.data ?? []))
       .catch(() => setError('Failed to load sample orders.'))
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => { fetchSamples(); }, [fetchSamples]);
+
+  const handleSampleSuccess = () => {
+    fetchSamples();
+  };
+
   return (
     <div className="max-w-5xl mx-auto">
-      <div className="mb-8">
-        <p className="text-accent text-xs font-black uppercase tracking-widest mb-1">Agent Portal</p>
-        <h1 className="text-2xl font-black text-gray-900 dark:text-zinc-100">Sample Orders</h1>
-        <p className="text-gray-500 dark:text-zinc-400 text-sm mt-1">
-          {loading ? '—' : `${samples.length} sample order${samples.length !== 1 ? 's' : ''} on record`}
-        </p>
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div>
+          <p className="text-accent text-xs font-black uppercase tracking-widest mb-1">Agent Portal</p>
+          <h1 className="text-2xl font-black text-gray-900 dark:text-zinc-100">Sample Orders</h1>
+          <p className="text-gray-500 dark:text-zinc-400 text-sm mt-1">
+            {loading ? '—' : `${samples.length} sample order${samples.length !== 1 ? 's' : ''} on record`}
+          </p>
+        </div>
+        <button
+          onClick={() => setModalOpen(true)}
+          className="inline-flex items-center gap-2 bg-accent hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          Log New Sample
+        </button>
       </div>
 
+      {/* Error */}
       {error && (
         <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 text-red-600 dark:text-red-400 text-sm px-4 py-3 rounded-xl mb-6">
           {error}
         </div>
       )}
 
+      {/* Table card */}
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 shadow-sm overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -42,6 +64,10 @@ const AgentSampleOrders = () => {
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <FileText className="w-12 h-12 text-gray-300 dark:text-zinc-700" />
             <p className="text-gray-500 dark:text-zinc-400 text-sm">No sample orders recorded yet.</p>
+            <button onClick={() => setModalOpen(true)}
+              className="text-accent text-sm font-semibold hover:underline">
+              Log your first sample →
+            </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -78,6 +104,14 @@ const AgentSampleOrders = () => {
           </div>
         )}
       </div>
+
+      {/* Modal */}
+      {modalOpen && (
+        <LogSampleModal
+          onClose={() => setModalOpen(false)}
+          onSuccess={() => { setModalOpen(false); handleSampleSuccess(); }}
+        />
+      )}
     </div>
   );
 };

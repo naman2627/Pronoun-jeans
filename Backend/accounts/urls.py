@@ -3,6 +3,7 @@ from .views import (
     RegisterView, RequestAccessView, ProfileView,
     AddressListCreateView, AddressDetailView,
     AgentBuyersListView, AgentBuyerDetailView,
+    AgentManualOnboardView,
 )
 
 urlpatterns = [
@@ -15,7 +16,8 @@ urlpatterns = [
     path('addresses/',          AddressListCreateView.as_view(), name='address-list'),
     path('addresses/<int:pk>/', AddressDetailView.as_view(),     name='address-detail'),
 
-    # Agent
-    path('agent/buyers/',          AgentBuyersListView.as_view(),  name='agent-buyers'),
-    path('agent/buyers/<int:pk>/', AgentBuyerDetailView.as_view(), name='agent-buyer-detail'),
+    # Agent — buyer management
+    path('agent/buyers/',              AgentBuyersListView.as_view(),   name='agent-buyers'),
+    path('agent/buyers/<int:pk>/',     AgentBuyerDetailView.as_view(),  name='agent-buyer-detail'),
+    path('agent/onboard-manual/',      AgentManualOnboardView.as_view(), name='agent-onboard-manual'),
 ]

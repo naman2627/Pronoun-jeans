@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
-import { Lock, Mail, ArrowRight, Loader2, AlertCircle, CheckCircle2, X, Building, Phone, FileText } from 'lucide-react';
+import {
+  Lock, Mail, ArrowRight, Loader2, AlertCircle,
+  CheckCircle2, X, Building, Phone, FileText, Tag,
+} from 'lucide-react';
 import api from '../api/axios';
 
 const Login = () => {
@@ -22,7 +25,6 @@ const Login = () => {
     setError('');
     try {
       const decoded = await login(email, password);
-      // Agent → agent dashboard; buyer → intended page or dashboard
       if (decoded?.is_agent) {
         navigate('/agent', { replace: true });
       } else {
@@ -98,28 +100,43 @@ const Login = () => {
 };
 
 const RequestAccessModal = ({ onClose }) => {
-  const [form, setForm]       = useState({ email: '', company_name: '', phone_number: '', gst_number: '' });
+  const [form, setForm]       = useState({
+    email: '', company_name: '', phone_number: '', gst_number: '', agent_code: '',
+  });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [error, setError]     = useState('');
+  const [errors, setErrors]   = useState({});  // field-level errors from backend
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setErrors({});
     try {
       await api.post('accounts/request-access/', form);
       setSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to submit. Please try again.');
+      const data = err.response?.data;
+      if (data && typeof data === 'object') {
+        // Map DRF field errors (e.g. { agent_code: ['Invalid Agent Code'] })
+        const fieldErrors = {};
+        Object.entries(data).forEach(([key, val]) => {
+          fieldErrors[key] = Array.isArray(val) ? val[0] : val;
+        });
+        setErrors(fieldErrors);
+      } else {
+        setErrors({ non_field: 'Failed to submit. Please try again.' });
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const set = (key) => (v) => setForm((p) => ({ ...p, [key]: v }));
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 shadow-xl p-8">
+      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 shadow-xl p-8 max-h-[90vh] overflow-y-auto">
+
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="text-gray-900 dark:text-zinc-100 text-lg font-bold">Request Partner Access</h3>
@@ -136,20 +153,57 @@ const RequestAccessModal = ({ onClose }) => {
               <CheckCircle2 className="w-7 h-7 text-green-600 dark:text-green-400" />
             </div>
             <h4 className="text-gray-900 dark:text-zinc-100 font-bold text-base mb-2">Request Submitted!</h4>
-            <p className="text-gray-500 dark:text-zinc-400 text-sm mb-6">We'll review your application and reach out within 24 hours.</p>
-            <button onClick={onClose} className="bg-accent hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-colors">Done</button>
+            <p className="text-gray-500 dark:text-zinc-400 text-sm mb-6">
+              We'll review your application and reach out within 24 hours.
+            </p>
+            <button onClick={onClose} className="bg-accent hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-colors">
+              Done
+            </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
+            {errors.non_field && (
               <div className="flex items-center gap-3 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 text-red-600 dark:text-red-400 text-sm px-4 py-3 rounded-xl">
-                <AlertCircle className="w-4 h-4 shrink-0" />{error}
+                <AlertCircle className="w-4 h-4 shrink-0" />{errors.non_field}
               </div>
             )}
-            <ModalInput icon={Mail}      label="Business Email *"      type="email" placeholder="you@company.com"       value={form.email}        onChange={v => setForm(p => ({ ...p, email: v }))} />
-            <ModalInput icon={Building}  label="Company Name *"                     placeholder="Your Company Pvt. Ltd." value={form.company_name} onChange={v => setForm(p => ({ ...p, company_name: v }))} />
-            <ModalInput icon={Phone}     label="Phone Number *"                     placeholder="+91 98765 43210"        value={form.phone_number} onChange={v => setForm(p => ({ ...p, phone_number: v }))} />
-            <ModalInput icon={FileText}  label="GST Number (optional)"              placeholder="22AAAAA0000A1Z5"        value={form.gst_number}   onChange={v => setForm(p => ({ ...p, gst_number: v }))} />
+
+            <ModalInput
+              icon={Mail} label="Business Email *" type="email"
+              placeholder="you@company.com"
+              value={form.email} onChange={set('email')}
+              error={errors.email}
+            />
+            <ModalInput
+              icon={Building} label="Company Name *"
+              placeholder="Your Company Pvt. Ltd."
+              value={form.company_name} onChange={set('company_name')}
+              error={errors.company_name}
+            />
+            <ModalInput
+              icon={Phone} label="Phone Number *"
+              placeholder="+91 98765 43210"
+              value={form.phone_number} onChange={set('phone_number')}
+              error={errors.phone_number}
+            />
+            <ModalInput
+              icon={FileText} label="GST Number (optional)"
+              placeholder="22AAAAA0000A1Z5"
+              value={form.gst_number} onChange={set('gst_number')}
+              error={errors.gst_number}
+            />
+
+            {/* Divider */}
+            <div className="border-t border-gray-100 dark:border-white/5 pt-1" />
+
+            <ModalInput
+              icon={Tag} label="Referral / Agent Code (optional)"
+              placeholder="e.g. AGT-001"
+              value={form.agent_code} onChange={set('agent_code')}
+              error={errors.agent_code}
+              hint="Enter the code shared by your sales agent to be mapped automatically."
+            />
+
             <button type="submit" disabled={loading}
               className="w-full flex items-center justify-center gap-2 bg-accent hover:bg-red-700 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl transition-colors text-sm mt-2">
               {loading ? <><Loader2 className="animate-spin w-4 h-4" /> Submitting…</> : 'Submit Request'}
@@ -161,14 +215,26 @@ const RequestAccessModal = ({ onClose }) => {
   );
 };
 
-const ModalInput = ({ icon: Icon, label, type = 'text', placeholder, value, onChange }) => (
+const ModalInput = ({ icon: Icon, label, type = 'text', placeholder, value, onChange, error, hint }) => (
   <div>
     <label className="text-gray-500 dark:text-zinc-400 text-xs font-bold uppercase tracking-widest block mb-1.5">{label}</label>
     <div className="relative">
       <Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-zinc-500 pointer-events-none" />
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 focus:border-accent text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 rounded-xl pl-11 pr-4 py-3 text-sm focus:outline-none transition-colors" />
+      <input
+        type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+        className={`w-full bg-gray-50 dark:bg-zinc-800 border text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-600 rounded-xl pl-11 pr-4 py-3 text-sm focus:outline-none transition-colors ${
+          error
+            ? 'border-red-300 dark:border-red-500/50 focus:border-red-500'
+            : 'border-gray-200 dark:border-white/10 focus:border-accent'
+        }`}
+      />
     </div>
+    {hint && !error && (
+      <p className="text-gray-400 dark:text-zinc-500 text-xs mt-1">{hint}</p>
+    )}
+    {error && (
+      <p className="text-red-500 dark:text-red-400 text-sm mt-1">{error}</p>
+    )}
   </div>
 );
 

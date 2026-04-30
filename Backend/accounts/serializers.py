@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import CustomUser, Address
+from .models import CustomUser, Address, AgentProfile
 
 
 class B2BTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -12,7 +12,6 @@ class B2BTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['is_verified_b2b'] = getattr(user, 'is_verified_b2b', False)
         token['is_agent']        = getattr(user, 'is_agent', False)
         token['is_staff']        = user.is_staff
-        # Include agent_code if agent profile exists
         try:
             token['agent_code'] = user.agent_profile.agent_code
         except Exception:
@@ -38,6 +37,62 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         return CustomUser.objects.create_user(**validated_data)
+
+
+class RequestAccessSerializer(serializers.Serializer):
+    """
+    Serializer for organic buyer self-registration via the Request Access modal.
+    Supports optional agent_code for auto-mapping to an agent.
+    """
+    email        = serializers.EmailField()
+    company_name = serializers.CharField(max_length=255)
+    phone_number = serializers.CharField(max_length=15)
+    gst_number   = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    agent_code   = serializers.CharField(max_length=20, required=False, allow_blank=True, write_only=True)
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError('An account with this email already exists.')
+        return value
+
+    def validate_agent_code(self, value):
+        value = value.strip()
+        if not value:
+            return value
+        try:
+            AgentProfile.objects.get(agent_code=value)
+        except AgentProfile.DoesNotExist:
+            raise serializers.ValidationError('Invalid Agent Code. Please check with your agent.')
+        return value
+
+    def create(self, validated_data):
+        agent_code   = validated_data.pop('agent_code', '').strip()
+        gst_number   = validated_data.pop('gst_number', '').strip() or None
+        email        = validated_data['email']
+        company_name = validated_data['company_name']
+        phone_number = validated_data['phone_number']
+
+        assigned_agent = None
+        if agent_code:
+            try:
+                agent_profile  = AgentProfile.objects.get(agent_code=agent_code)
+                assigned_agent = agent_profile.user
+            except AgentProfile.DoesNotExist:
+                pass  # already validated above, this is a safety fallback
+
+        user = CustomUser(
+            email           = email,
+            username        = email,
+            company_name    = company_name,
+            phone_number    = phone_number,
+            gst_number      = gst_number,
+            is_verified_b2b = False,
+            assigned_agent  = assigned_agent,
+        )
+        user.set_unusable_password()
+        user.save()
+        return user
 
 
 class AgentBuyerSerializer(serializers.ModelSerializer):

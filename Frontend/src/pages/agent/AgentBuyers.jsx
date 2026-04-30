@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Users, Loader, UserPlus, Search, X } from 'lucide-react';
 import api from '../../api/axios';
+import OnboardBuyerModal from '../../components/agent/OnboardBuyerModal';
 
 const StatusPill = ({ verified }) =>
   verified ? (
@@ -14,17 +15,26 @@ const StatusPill = ({ verified }) =>
   );
 
 const AgentBuyers = () => {
-  const [buyers, setBuyers]   = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
-  const [search, setSearch]   = useState('');
+  const [buyers, setBuyers]       = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+  const [search, setSearch]       = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
+  const fetchBuyers = useCallback(() => {
+    setLoading(true);
     api.get('accounts/agent/buyers/')
       .then(res => setBuyers(res.data?.results ?? res.data ?? []))
       .catch(() => setError('Failed to load buyers.'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchBuyers(); }, [fetchBuyers]);
+
+  const handleOnboardSuccess = () => {
+    // Re-fetch buyers so new entry appears immediately
+    fetchBuyers();
+  };
 
   const filtered = buyers.filter(b => {
     const q = search.toLowerCase();
@@ -49,7 +59,7 @@ const AgentBuyers = () => {
           </p>
         </div>
         <button
-          onClick={() => alert('Onboarding modal coming in Phase 5')}
+          onClick={() => setModalOpen(true)}
           className="inline-flex items-center gap-2 bg-accent hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shrink-0"
         >
           <UserPlus className="w-4 h-4" />
@@ -67,17 +77,12 @@ const AgentBuyers = () => {
       {/* Table card */}
       <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 shadow-sm overflow-hidden">
 
-        {/* Search bar */}
+        {/* Search */}
         <div className="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex items-center gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-zinc-500 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search buyers…"
-              className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 rounded-xl pl-9 pr-8 py-2 text-sm focus:outline-none focus:border-accent transition-colors"
-            />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search buyers…"
+              className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 rounded-xl pl-9 pr-8 py-2 text-sm focus:outline-none focus:border-accent transition-colors" />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-300">
                 <X className="w-3.5 h-3.5" />
@@ -101,18 +106,24 @@ const AgentBuyers = () => {
             <p className="text-gray-500 dark:text-zinc-400 text-sm">
               {search ? `No buyers match "${search}"` : 'No buyers assigned yet.'}
             </p>
+            {!search && (
+              <button onClick={() => setModalOpen(true)}
+                className="text-accent text-sm font-semibold hover:underline">
+                Onboard your first buyer →
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[700px]">
-              <thead>
-                <tr className="text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-widest bg-gray-50 dark:bg-zinc-800/50 border-b border-gray-100 dark:border-white/5">
-                  <th className="text-left px-5 py-3.5">Name</th>
-                  <th className="text-left px-5 py-3.5">Company</th>
-                  <th className="text-left px-5 py-3.5">Email</th>
-                  <th className="text-left px-5 py-3.5">Phone</th>
-                  <th className="text-left px-5 py-3.5">GST</th>
-                  <th className="text-left px-5 py-3.5">Status</th>
+            <table className="w-full text-left text-sm min-w-[700px]">
+              <thead className="bg-gray-50 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 font-medium uppercase text-xs border-b border-gray-100 dark:border-white/5">
+                <tr>
+                  <th className="px-5 py-3.5">Name</th>
+                  <th className="px-5 py-3.5">Company</th>
+                  <th className="px-5 py-3.5">Email</th>
+                  <th className="px-5 py-3.5">Phone</th>
+                  <th className="px-5 py-3.5">GST</th>
+                  <th className="px-5 py-3.5">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,25 +131,13 @@ const AgentBuyers = () => {
                   <tr key={buyer.id}
                     className={`border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors ${idx % 2 === 0 ? '' : 'bg-gray-50/30 dark:bg-white/[0.01]'}`}>
                     <td className="px-5 py-4">
-                      <p className="text-gray-900 dark:text-zinc-100 font-semibold">
-                        {buyer.full_name || '—'}
-                      </p>
+                      <p className="text-gray-900 dark:text-zinc-100 font-semibold">{buyer.full_name || '—'}</p>
                     </td>
-                    <td className="px-5 py-4 text-gray-600 dark:text-zinc-300">
-                      {buyer.company_name || '—'}
-                    </td>
-                    <td className="px-5 py-4 text-gray-500 dark:text-zinc-400 font-mono text-xs">
-                      {buyer.email}
-                    </td>
-                    <td className="px-5 py-4 text-gray-500 dark:text-zinc-400">
-                      {buyer.phone_number || '—'}
-                    </td>
-                    <td className="px-5 py-4 text-gray-400 dark:text-zinc-500 font-mono text-xs">
-                      {buyer.gst_number || '—'}
-                    </td>
-                    <td className="px-5 py-4">
-                      <StatusPill verified={buyer.is_verified_b2b} />
-                    </td>
+                    <td className="px-5 py-4 text-gray-600 dark:text-zinc-300">{buyer.company_name || '—'}</td>
+                    <td className="px-5 py-4 text-gray-500 dark:text-zinc-400 font-mono text-xs">{buyer.email}</td>
+                    <td className="px-5 py-4 text-gray-500 dark:text-zinc-400">{buyer.phone_number || '—'}</td>
+                    <td className="px-5 py-4 text-gray-400 dark:text-zinc-500 font-mono text-xs">{buyer.gst_number || '—'}</td>
+                    <td className="px-5 py-4"><StatusPill verified={buyer.is_verified_b2b} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -146,6 +145,14 @@ const AgentBuyers = () => {
           </div>
         )}
       </div>
+
+      {/* Modal */}
+      {modalOpen && (
+        <OnboardBuyerModal
+          onClose={() => setModalOpen(false)}
+          onSuccess={handleOnboardSuccess}
+        />
+      )}
     </div>
   );
 };

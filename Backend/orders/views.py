@@ -206,10 +206,13 @@ class AgentLedgerSummaryView(APIView):
         })
 
 
-# ── Agent: Sample Orders ──────────────────────────────────────────────────────
+# ── Agent: Sample Orders (List + Create) ──────────────────────────────────────
 
-class AgentSampleOrdersListView(generics.ListAPIView):
-    """Returns all sample orders for buyers assigned to the logged-in agent."""
+class AgentSampleOrdersListView(generics.ListCreateAPIView):
+    """
+    GET  — returns all sample orders for the logged-in agent's buyers.
+    POST — creates a new sample order; agent is injected automatically.
+    """
     permission_classes = [IsAgent]
     serializer_class   = SampleOrderSerializer
 
@@ -217,6 +220,10 @@ class AgentSampleOrdersListView(generics.ListAPIView):
         return SampleOrder.objects.filter(
             agent=self.request.user
         ).select_related('buyer', 'agent').order_by('-date')
+
+    def perform_create(self, serializer):
+        # Agent is always the logged-in user — never taken from payload
+        serializer.save(agent=self.request.user)
 
 
 # ── Agent: Buyer Orders ───────────────────────────────────────────────────────
