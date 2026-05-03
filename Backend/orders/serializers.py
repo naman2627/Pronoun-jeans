@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Cart, CartItem, Order, OrderItem, Commission, SampleOrder
+from .models import Cart, CartItem, Order, OrderItem, Commission, SampleOrder, Coupon
 from products.models import ProductVariation
 from accounts.serializers import AddressSerializer
 
@@ -50,24 +50,32 @@ class OrderItemSerializer(serializers.ModelSerializer):
         fields = ['id', 'variation', 'quantity', 'price']
 
 
+class CouponSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Coupon
+        fields = ['code', 'discount_type', 'discount_value']
+
+
 class OrderSerializer(serializers.ModelSerializer):
     items            = OrderItemSerializer(many=True, read_only=True)
     user             = serializers.StringRelatedField(read_only=True)
     shipping_address = AddressSerializer(read_only=True)
     billing_address  = AddressSerializer(read_only=True)
+    coupon_code      = serializers.CharField(source='coupon.code', read_only=True, default=None)
+    grand_total      = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model  = Order
         fields = [
             'id', 'user', 'status', 'payment_method', 'payment_status',
-            'total_amount', 'shipping_address', 'billing_address',
+            'total_amount', 'coupon_code', 'discount_amount', 'grand_total',
+            'shipping_address', 'billing_address',
             'courier_name', 'tracking_number', 'tracking_url',
             'items', 'created_at',
         ]
 
 
 class OrderTrackingUpdateSerializer(serializers.ModelSerializer):
-    """Only exposes the three tracking fields — nothing else is writable."""
     class Meta:
         model  = Order
         fields = ['courier_name', 'tracking_number', 'tracking_url']
@@ -85,8 +93,7 @@ class CommissionSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Commission
         fields = [
-            'id',
-            'agent_email',
+            'id', 'agent_email',
             'order_id', 'order_total', 'order_status', 'order_date',
             'buyer_email', 'buyer_company',
             'commission_percentage', 'amount',
@@ -103,11 +110,9 @@ class SampleOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model  = SampleOrder
         fields = [
-            'id',
-            'design_number', 'rate', 'date',
+            'id', 'design_number', 'rate', 'date',
             'buyer', 'buyer_email', 'buyer_company', 'buyer_name',
-            'agent', 'agent_email',
-            'created_at',
+            'agent', 'agent_email', 'created_at',
         ]
         extra_kwargs = {
             'buyer': {'write_only': True},

@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils import timezone
-from .models import Cart, CartItem, Order, OrderItem, Commission, SampleOrder
+from .models import Cart, CartItem, Order, OrderItem, Commission, SampleOrder, Coupon
 
 
 class CartItemInline(admin.TabularInline):
@@ -19,6 +19,23 @@ class OrderItemInline(admin.TabularInline):
         return super().get_queryset(request).select_related('variation__product')
 
 
+@admin.register(Coupon)
+class CouponAdmin(admin.ModelAdmin):
+    list_display   = ['code', 'discount_type', 'discount_value', 'min_order_value', 'is_active', 'valid_from', 'valid_to']
+    list_filter    = ['is_active', 'discount_type']
+    search_fields  = ['code']
+    ordering       = ['-valid_to']
+    list_editable  = ['is_active']
+    fieldsets = (
+        ('Coupon Details', {
+            'fields': ('code', 'discount_type', 'discount_value', 'min_order_value', 'is_active'),
+        }),
+        ('Validity', {
+            'fields': ('valid_from', 'valid_to'),
+        }),
+    )
+
+
 @admin.register(Cart)
 class CartAdmin(admin.ModelAdmin):
     list_display = ['user', 'created_at', 'updated_at']
@@ -27,15 +44,18 @@ class CartAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display    = ['id', 'user', 'status', 'total_amount', 'courier_name', 'tracking_number', 'created_at']
+    list_display    = ['id', 'user', 'status', 'total_amount', 'discount_amount', 'coupon', 'courier_name', 'tracking_number', 'created_at']
     list_filter     = ['status', 'payment_method', 'payment_status']
     search_fields   = ['user__email', 'tracking_number', 'courier_name']
-    readonly_fields = ['total_amount', 'created_at', 'updated_at']
+    readonly_fields = ['total_amount', 'discount_amount', 'created_at', 'updated_at']
     inlines         = [OrderItemInline]
 
     fieldsets = (
         ('Order Info', {
             'fields': ('user', 'status', 'payment_method', 'payment_status', 'total_amount'),
+        }),
+        ('Discount', {
+            'fields': ('coupon', 'discount_amount'),
         }),
         ('Addresses', {
             'fields': ('shipping_address', 'billing_address'),

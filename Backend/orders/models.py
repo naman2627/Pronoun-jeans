@@ -1,5 +1,37 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
+
+
+class Coupon(models.Model):
+    class DiscountType(models.TextChoices):
+        PERCENTAGE   = 'percentage',   'Percentage'
+        FIXED_AMOUNT = 'fixed_amount', 'Fixed Amount'
+
+    code            = models.CharField(max_length=50, unique=True, db_index=True)
+    discount_type   = models.CharField(max_length=20, choices=DiscountType.choices, default=DiscountType.PERCENTAGE)
+    discount_value  = models.DecimalField(max_digits=10, decimal_places=2)
+    min_order_value = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    is_active       = models.BooleanField(default=True)
+    valid_from      = models.DateTimeField()
+    valid_to        = models.DateTimeField()
+    created_at      = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.code} ({self.get_discount_type_display()} — {self.discount_value})"
+
+    def is_valid(self):
+        now = timezone.now()
+        return self.is_active and self.valid_from <= now <= self.valid_to
+
+    def calculate_discount(self, cart_total):
+        from decimal import Decimal
+        if self.discount_type == self.DiscountType.PERCENTAGE:
+            discount = (Decimal(str(self.discount_value)) / Decimal('100')) * cart_total
+        else:
+            discount = Decimal(str(self.discount_value))
+        # Discount cannot exceed cart total
+        return min(discount, cart_total).quantize(Decimal('0.01'))
 
 
 class Cart(models.Model):
@@ -49,13 +81,22 @@ class Order(models.Model):
     payment_status   = models.CharField(max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.PENDING)
     total_amount     = models.DecimalField(max_digits=10, decimal_places=2)
 
-    # Tracking fields
-    courier_name     = models.CharField(max_length=100, null=True, blank=True)
-    tracking_number  = models.CharField(max_length=100, null=True, blank=True)
-    tracking_url     = models.URLField(null=True, blank=True)
+    # Coupon / discount
+    coupon          = models.ForeignKey(Coupon, null=True, blank=True, on_delete=models.SET_NULL, related_name='orders')
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
-    created_at       = models.DateTimeField(auto_now_add=True)
-    updated_at       = models.DateTimeField(auto_now=True)
+    # Tracking fields
+    courier_name    = models.CharField(max_length=100, null=True, blank=True)
+    tracking_number = models.CharField(max_length=100, null=True, blank=True)
+    tracking_url    = models.URLField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def grand_total(self):
+        from decimal import Decimal
+        return max(self.total_amount - Decimal(str(self.discount_amount)), Decimal('0'))
 
     def __str__(self):
         return f"Order#{self.pk} — {self.user.email} [{self.status}]"

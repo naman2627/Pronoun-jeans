@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     CartDetailView, CartItemUpdateView, CartItemDetailView,
     CheckoutView, OrderHistoryView,
+    ApplyCouponView,
     AgentCommissionsListView, AgentLedgerSummaryView,
     AgentSampleOrdersListView, AgentOrdersListView,
     AgentOrderTrackingUpdateView, OrderTrackingTimelineView,
@@ -12,6 +13,9 @@ urlpatterns = [
     path('cart/',                CartDetailView.as_view(),      name='cart-detail'),
     path('cart/update/',         CartItemUpdateView.as_view(),  name='cart-item-update'),
     path('cart/items/<int:pk>/', CartItemDetailView.as_view(),  name='cart-item-detail'),
+
+    # Coupon
+    path('cart/apply-coupon/', ApplyCouponView.as_view(), name='apply-coupon'),
 
     # Checkout & history
     path('checkout/', CheckoutView.as_view(),    name='checkout'),
@@ -26,6 +30,6 @@ urlpatterns = [
     path('agent/orders/',        AgentOrdersListView.as_view(),        name='agent-orders'),
 
     # Agent — per-order actions
-    path('agent/orders/<int:pk>/tracking/',      AgentOrderTrackingUpdateView.as_view(), name='agent-order-tracking'),
-    path('agent/orders/<int:pk>/track-timeline/', OrderTrackingTimelineView.as_view(),   name='order-track-timeline'),
+    path('agent/orders/<int:pk>/tracking/',       AgentOrderTrackingUpdateView.as_view(), name='agent-order-tracking'),
+    path('agent/orders/<int:pk>/track-timeline/', OrderTrackingTimelineView.as_view(),    name='order-track-timeline'),
 ]
