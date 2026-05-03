@@ -4,7 +4,7 @@ from .views import (
     CheckoutView, OrderHistoryView,
     AgentCommissionsListView, AgentLedgerSummaryView,
     AgentSampleOrdersListView, AgentOrdersListView,
-    AgentOrderTrackingUpdateView,
+    AgentOrderTrackingUpdateView, OrderTrackingTimelineView,
 )
 
 urlpatterns = [
@@ -25,6 +25,7 @@ urlpatterns = [
     path('agent/sample-orders/', AgentSampleOrdersListView.as_view(), name='agent-sample-orders'),
     path('agent/orders/',        AgentOrdersListView.as_view(),        name='agent-orders'),
 
-    # Agent — order tracking update
-    path('agent/orders/<int:pk>/tracking/', AgentOrderTrackingUpdateView.as_view(), name='agent-order-tracking'),
+    # Agent — per-order actions
+    path('agent/orders/<int:pk>/tracking/',      AgentOrderTrackingUpdateView.as_view(), name='agent-order-tracking'),
+    path('agent/orders/<int:pk>/track-timeline/', OrderTrackingTimelineView.as_view(),   name='order-track-timeline'),
 ]
