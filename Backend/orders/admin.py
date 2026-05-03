@@ -15,6 +15,9 @@ class OrderItemInline(admin.TabularInline):
     fields          = ['variation', 'quantity', 'price']
     readonly_fields = ['price']
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('variation__product')
+
 
 @admin.register(Cart)
 class CartAdmin(admin.ModelAdmin):
