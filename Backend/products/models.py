@@ -28,6 +28,20 @@ class Product(models.Model):
         return self.name
 
 
+class ProductImage(models.Model):
+    """Secondary gallery images for a product."""
+    product  = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='gallery_images')
+    image    = models.ImageField(upload_to='products/gallery/')
+    alt_text = models.CharField(max_length=255, blank=True)
+    order    = models.PositiveSmallIntegerField(default=0, help_text='Display order (lower = first)')
+
+    class Meta:
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f"Gallery image for {self.product.name} (#{self.pk})"
+
+
 class Color(models.Model):
     name     = models.CharField(max_length=100, unique=True)
     hex_code = models.CharField(max_length=7, default='#CCCCCC',
@@ -43,24 +57,17 @@ class Color(models.Model):
 class ProductVariation(models.Model):
     product        = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="variations")
     size           = models.CharField(max_length=50)
-
-    # Legacy plain-text color — auto-synced from color_palette on save
     color          = models.CharField(max_length=100, blank=True, null=True)
-
-    # Structured color FK — single source of truth
     color_palette  = models.ForeignKey(
         Color,
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='variations',
     )
-
     sku            = models.CharField(max_length=100, unique=True)
     b2b_price      = models.DecimalField(max_digits=10, decimal_places=2)
     mrp            = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     stock_quantity = models.PositiveIntegerField(default=0)
-
-    # Per-variation image for color swatch switching on the product page
     image          = models.ImageField(upload_to='variations/', null=True, blank=True)
 
     class Meta:

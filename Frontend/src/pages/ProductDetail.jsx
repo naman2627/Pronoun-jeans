@@ -219,6 +219,27 @@ const ProductDetail = () => {
               )}
             </div>
 
+            {/* Thumbnail Gallery Strip */}
+            {product.gallery_images && product.gallery_images.length > 0 && (
+              <div className="flex gap-3 mt-4 overflow-x-auto pb-2 scrollbar-hide">
+                <button 
+                  onClick={() => setMainImage(product.image)}
+                  className={`w-16 h-16 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === product.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-700'}`}
+                >
+                  <img src={product.image} alt="Main" className="w-full h-full object-cover" />
+                </button>
+                {product.gallery_images.map((img) => (
+                  <button 
+                    key={img.id}
+                    onClick={() => setMainImage(img.image)}
+                    className={`w-16 h-16 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === img.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-700'}`}
+                  >
+                    <img src={img.image} alt="Gallery view" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="mt-4 space-y-3">
               <div>
                 <p className="text-accent text-xs font-bold uppercase tracking-widest">{product.category_name}</p>

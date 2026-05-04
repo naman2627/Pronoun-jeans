@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Category, Product, ProductVariation, Color
+from .models import Category, Product, ProductVariation, ProductImage, Color
 
 
 @admin.register(Color)
@@ -29,10 +29,28 @@ class CategoryAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('name',)}
 
 
+class ProductImageInline(admin.TabularInline):
+    model       = ProductImage
+    extra       = 3
+    fields      = ['image', 'alt_text', 'order', 'preview']
+    readonly_fields = ['preview']
+    ordering    = ['order', 'id']
+
+    def preview(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="width:60px;height:60px;object-fit:cover;'
+                'border-radius:6px;border:1px solid #ddd;" />',
+                obj.image.url,
+            )
+        return '—'
+    preview.short_description = 'Preview'
+
+
 class ProductVariationInline(admin.TabularInline):
     model  = ProductVariation
     extra  = 1
-    fields = ['size', 'color', 'color_palette', 'sku', 'b2b_price', 'mrp', 'stock_quantity']
+    fields = ['size', 'color', 'color_palette', 'sku', 'b2b_price', 'mrp', 'stock_quantity', 'image']
 
 
 @admin.register(Product)
@@ -40,7 +58,24 @@ class ProductAdmin(admin.ModelAdmin):
     list_display        = ['name', 'category', 'is_active', 'created_at']
     list_filter         = ['is_active', 'category']
     prepopulated_fields = {'slug': ('name',)}
-    inlines             = [ProductVariationInline]
+    inlines             = [ProductImageInline, ProductVariationInline]
+
+
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display  = ['preview', 'product', 'alt_text', 'order']
+    list_filter   = ['product']
+    ordering      = ['product', 'order']
+
+    def preview(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="width:50px;height:50px;object-fit:cover;'
+                'border-radius:4px;border:1px solid #ddd;" />',
+                obj.image.url,
+            )
+        return '—'
+    preview.short_description = ''
 
 
 @admin.register(ProductVariation)

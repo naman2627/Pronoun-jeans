@@ -1,11 +1,17 @@
 from rest_framework import serializers
-from .models import Category, Product, ProductVariation
+from .models import Category, Product, ProductVariation, ProductImage
 
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model  = Category
         fields = ['id', 'name', 'slug', 'image']
+
+
+class ProductImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ProductImage
+        fields = ['id', 'image', 'alt_text', 'order']
 
 
 class ProductVariationSerializer(serializers.ModelSerializer):
@@ -42,13 +48,14 @@ class ProductVariationSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    variations    = ProductVariationSerializer(many=True, read_only=True)
-    category_name = serializers.CharField(source='category.name', read_only=True)
+    variations     = ProductVariationSerializer(many=True, read_only=True)
+    category_name  = serializers.CharField(source='category.name', read_only=True)
+    gallery_images = ProductImageSerializer(many=True, read_only=True)
 
     class Meta:
         model  = Product
         fields = [
             'id', 'name', 'slug', 'description', 'fabric_details',
             'category', 'category_name', 'is_active', 'moq',
-            'image', 'created_at', 'variations',
+            'image', 'created_at', 'variations', 'gallery_images',
         ]
