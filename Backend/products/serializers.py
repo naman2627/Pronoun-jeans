@@ -31,13 +31,13 @@ class ProductVariationSerializer(serializers.ModelSerializer):
             return 0
 
     def get_color_name(self, obj):
-        if obj.color_palette_id and 'color_palette' in obj.__dict__:
-            return obj.__dict__['color_palette'].name
+        if obj.color_palette:
+            return obj.color_palette.name
         return obj.color or ''
 
     def get_color_hex(self, obj):
-        if obj.color_palette_id and 'color_palette' in obj.__dict__:
-            return obj.__dict__['color_palette'].hex_code
+        if obj.color_palette:
+            return obj.color_palette.hex_code
         return '#CCCCCC'
 
 

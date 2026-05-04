@@ -7,10 +7,26 @@ from accounts.serializers import AddressSerializer
 class ProductVariationBriefSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     moq          = serializers.IntegerField(source='product.moq', read_only=True)
+    color_name   = serializers.SerializerMethodField()
+    color_hex    = serializers.SerializerMethodField()
 
     class Meta:
         model  = ProductVariation
-        fields = ['id', 'sku', 'size', 'color', 'b2b_price', 'stock_quantity', 'product_name', 'moq']
+        fields = [
+            'id', 'sku', 'size',
+            'color', 'color_name', 'color_hex',
+            'b2b_price', 'stock_quantity', 'product_name', 'moq',
+        ]
+
+    def get_color_name(self, obj):
+        if obj.color_palette:
+            return obj.color_palette.name
+        return obj.color or ''
+
+    def get_color_hex(self, obj):
+        if obj.color_palette:
+            return obj.color_palette.hex_code
+        return '#CCCCCC'
 
 
 class CartItemSerializer(serializers.ModelSerializer):
