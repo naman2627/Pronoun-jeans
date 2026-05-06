@@ -30,7 +30,6 @@ class Coupon(models.Model):
             discount = (Decimal(str(self.discount_value)) / Decimal('100')) * cart_total
         else:
             discount = Decimal(str(self.discount_value))
-        # Discount cannot exceed cart total
         return min(discount, cart_total).quantize(Decimal('0.01'))
 
 
@@ -84,6 +83,11 @@ class Order(models.Model):
     # Coupon / discount
     coupon          = models.ForeignKey(Coupon, null=True, blank=True, on_delete=models.SET_NULL, related_name='orders')
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    # Razorpay transaction fields
+    razorpay_order_id   = models.CharField(max_length=100, null=True, blank=True)
+    razorpay_payment_id = models.CharField(max_length=100, null=True, blank=True)
+    razorpay_signature  = models.CharField(max_length=255, null=True, blank=True)
 
     # Tracking fields
     courier_name    = models.CharField(max_length=100, null=True, blank=True)

@@ -3,6 +3,7 @@ from .views import (
     CartDetailView, CartItemUpdateView, CartItemDetailView,
     CheckoutView, OrderHistoryView,
     ApplyCouponView, ActiveCouponsListView,
+    RazorpayCreateOrderView, RazorpayVerifyPaymentView,
     AgentCommissionsListView, AgentLedgerSummaryView,
     AgentSampleOrdersListView, AgentOrdersListView,
     AgentOrderTrackingUpdateView, OrderTrackingTimelineView,
@@ -18,7 +19,11 @@ urlpatterns = [
     path('cart/apply-coupon/', ApplyCouponView.as_view(),      name='apply-coupon'),
     path('coupons/active/',    ActiveCouponsListView.as_view(), name='active-coupons'),
 
-    # Checkout & history
+    # Razorpay
+    path('razorpay/create/', RazorpayCreateOrderView.as_view(),   name='razorpay-create'),
+    path('razorpay/verify/', RazorpayVerifyPaymentView.as_view(),  name='razorpay-verify'),
+
+    # Checkout (non-Razorpay) & history
     path('checkout/', CheckoutView.as_view(),    name='checkout'),
     path('history/',  OrderHistoryView.as_view(), name='order-history'),
 

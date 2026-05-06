@@ -1,8 +1,12 @@
+import razorpay
+import hmac
+import hashlib
 from decimal import Decimal
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
 from rest_framework.permissions import IsAuthenticated
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -16,6 +20,12 @@ from .serializers import (
     CartSerializer, OrderSerializer, CommissionSerializer,
     SampleOrderSerializer, OrderTrackingUpdateSerializer, CouponSerializer,
 )
+
+
+def get_razorpay_client():
+    return razorpay.Client(
+        auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
+    )
 
 
 # ── Cart ──────────────────────────────────────────────────────────────────────
@@ -103,7 +113,6 @@ class CartItemDetailView(APIView):
 # ── Coupons ───────────────────────────────────────────────────────────────────
 
 class ActiveCouponsListView(generics.ListAPIView):
-    """Returns all currently active and date-valid coupons for the cart offers UI."""
     permission_classes = [IsAuthenticated]
     serializer_class   = CouponSerializer
 
@@ -168,7 +177,187 @@ class ApplyCouponView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-# ── Checkout ──────────────────────────────────────────────────────────────────
+# ── Razorpay ──────────────────────────────────────────────────────────────────
+
+class RazorpayCreateOrderView(APIView):
+    """
+    POST /api/orders/razorpay/create/
+    Creates a Razorpay order and a pending Django Order.
+    Returns razorpay_order_id and key_id to the frontend.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        shipping_address_id = request.data.get('shipping_address_id')
+        billing_address_id  = request.data.get('billing_address_id')
+        coupon_code         = request.data.get('coupon_code', '').strip().upper()
+
+        # Validate addresses
+        shipping_address = None
+        billing_address  = None
+
+        if shipping_address_id:
+            try:
+                shipping_address = Address.objects.get(pk=shipping_address_id, user=request.user)
+            except Address.DoesNotExist:
+                return Response({'error': 'Shipping address not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if billing_address_id:
+            try:
+                billing_address = Address.objects.get(pk=billing_address_id, user=request.user)
+            except Address.DoesNotExist:
+                return Response({'error': 'Billing address not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validate cart
+        try:
+            cart = Cart.objects.prefetch_related('items__variation__product').get(user=request.user)
+        except Cart.DoesNotExist:
+            return Response({'error': 'Cart not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        cart_items = cart.items.all()
+        if not cart_items.exists():
+            return Response({'error': 'Cart is empty.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        total_amount    = sum(item.quantity * item.variation.b2b_price for item in cart_items)
+        coupon          = None
+        discount_amount = Decimal('0.00')
+
+        if coupon_code:
+            try:
+                coupon = Coupon.objects.get(code=coupon_code)
+                now    = timezone.now()
+                if coupon.is_active and coupon.valid_from <= now <= coupon.valid_to and total_amount >= coupon.min_order_value:
+                    discount_amount = coupon.calculate_discount(total_amount)
+                else:
+                    coupon = None
+            except Coupon.DoesNotExist:
+                coupon = None
+
+        grand_total = total_amount - discount_amount
+
+        # Create Razorpay order (amount in paise)
+        try:
+            client           = get_razorpay_client()
+            razorpay_amount  = int(grand_total * 100)  # paise
+            razorpay_order   = client.order.create({
+                'amount':   razorpay_amount,
+                'currency': 'INR',
+                'payment_capture': 1,  # auto-capture
+            })
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to create Razorpay order: {str(e)}'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # Create Django Order (pending until payment verified)
+        django_order = Order.objects.create(
+            user                = request.user,
+            shipping_address    = shipping_address,
+            billing_address     = billing_address,
+            payment_method      = Order.PaymentMethod.RAZORPAY,
+            payment_status      = Order.PaymentStatus.PENDING,
+            total_amount        = total_amount,
+            coupon              = coupon,
+            discount_amount     = discount_amount,
+            status              = Order.Status.PENDING,
+            razorpay_order_id   = razorpay_order['id'],
+        )
+
+        OrderItem.objects.bulk_create([
+            OrderItem(
+                order     = django_order,
+                variation = item.variation,
+                quantity  = item.quantity,
+                price     = item.variation.b2b_price,
+            )
+            for item in cart_items
+        ])
+
+        return Response({
+            'razorpay_order_id': razorpay_order['id'],
+            'amount':            razorpay_amount,
+            'currency':          'INR',
+            'key_id':            settings.RAZORPAY_KEY_ID,
+            'django_order_id':   django_order.id,
+            'name':              request.user.company_name or request.user.email,
+            'email':             request.user.email,
+            'contact':           getattr(request.user, 'phone_number', '') or '',
+        }, status=status.HTTP_201_CREATED)
+
+
+class RazorpayVerifyPaymentView(APIView):
+    """
+    POST /api/orders/razorpay/verify/
+    Verifies the Razorpay payment signature, marks the order as Paid,
+    and clears the user's cart.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        razorpay_order_id   = request.data.get('razorpay_order_id', '')
+        razorpay_payment_id = request.data.get('razorpay_payment_id', '')
+        razorpay_signature  = request.data.get('razorpay_signature', '')
+
+        if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
+            return Response(
+                {'error': 'razorpay_order_id, razorpay_payment_id, and razorpay_signature are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Verify signature using HMAC-SHA256
+        try:
+            client = get_razorpay_client()
+            client.utility.verify_payment_signature({
+                'razorpay_order_id':   razorpay_order_id,
+                'razorpay_payment_id': razorpay_payment_id,
+                'razorpay_signature':  razorpay_signature,
+            })
+        except razorpay.errors.SignatureVerificationError:
+            return Response(
+                {'error': 'Payment signature verification failed. Please contact support.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Verification error: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Fetch and update the Django order
+        try:
+            order = Order.objects.get(
+                razorpay_order_id=razorpay_order_id,
+                user=request.user,
+            )
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        order.razorpay_payment_id = razorpay_payment_id
+        order.razorpay_signature  = razorpay_signature
+        order.payment_status      = Order.PaymentStatus.PAID
+        order.status              = Order.Status.APPROVED
+        order.save(update_fields=[
+            'razorpay_payment_id', 'razorpay_signature',
+            'payment_status', 'status',
+        ])
+
+        # Clear cart
+        try:
+            cart = Cart.objects.get(user=request.user)
+            cart.items.all().delete()
+        except Cart.DoesNotExist:
+            pass
+
+        return Response({
+            'message':  'Payment verified successfully.',
+            'order_id': order.id,
+        }, status=status.HTTP_200_OK)
+
+
+# ── Checkout (non-Razorpay) ───────────────────────────────────────────────────
 
 class CheckoutView(APIView):
     permission_classes = [IsAuthenticated]
@@ -183,6 +372,13 @@ class CheckoutView(APIView):
         if payment_method not in Order.PaymentMethod.values:
             return Response(
                 {'error': f"Invalid payment_method. Choose from: {Order.PaymentMethod.values}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Block Razorpay from using this endpoint — it has its own flow
+        if payment_method == Order.PaymentMethod.RAZORPAY:
+            return Response(
+                {'error': 'For Razorpay payments, use /api/orders/razorpay/create/'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
