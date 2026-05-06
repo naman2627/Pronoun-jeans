@@ -50,33 +50,43 @@ const ColorSwatch = ({ hex, name, size = 'sm' }) => {
   );
 };
 
-// ── Price Cell ────────────────────────────────────────────────────────────────
+// ── Price Cell — B2B price only ───────────────────────────────────────────────
 
-const PriceCell = ({ v, moq }) => {
-  const hasMrp = v.mrp && parseFloat(v.mrp) > 0;
-  const margin = v.margin_percentage;
+const PriceCell = ({ v }) => {
+  const price    = parseFloat(v.b2b_price);
+  const setPrice = v.mrp && parseFloat(v.mrp) > 0 ? parseFloat(v.mrp) : null;
+
   return (
     <td className="px-4 py-3">
-      {/* Per piece price */}
-      <p className="text-gray-400 dark:text-zinc-500 text-[10px] uppercase tracking-widest leading-none mb-0.5">
-        Per piece
+      <p className="text-gray-900 dark:text-zinc-100 font-bold text-sm">
+        ₹{price.toFixed(2)}
       </p>
-      <p className="text-gray-700 dark:text-zinc-300 font-semibold text-sm">
-        ₹{parseFloat(v.b2b_price).toFixed(2)}
-      </p>
+      {setPrice && (
+        <p className="text-gray-400 dark:text-zinc-500 text-[10px] uppercase tracking-widest mt-0.5">
+          set ₹{setPrice.toFixed(2)}
+        </p>
+      )}
+    </td>
+  );
+};
 
-      {/* MRP strikethrough + margin */}
-      {hasMrp && (
-        <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
-          <span className="text-gray-400 dark:text-zinc-600 text-xs line-through">
-            MRP ₹{parseFloat(v.mrp).toFixed(2)}
-          </span>
-          {margin > 0 && (
-            <span className="inline-flex items-center bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
-              {margin}% margin
-            </span>
-          )}
-        </div>
+// ── MRP / Margin Cell ─────────────────────────────────────────────────────────
+
+const MrpMarginCell = ({ v }) => {
+  const hasMrp = v.mrp && parseFloat(v.mrp) > 0;
+  const margin = v.margin_percentage;
+
+  if (!hasMrp) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-xs">—</td>;
+
+  return (
+    <td className="px-4 py-3">
+      <p className="text-gray-400 dark:text-zinc-500 text-xs line-through">
+        ₹{parseFloat(v.mrp).toFixed(2)}
+      </p>
+      {margin > 0 && (
+        <span className="inline-flex items-center bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap mt-0.5">
+          {margin}%
+        </span>
       )}
     </td>
   );
@@ -110,7 +120,7 @@ const ProductDetail = () => {
   const [showToast, setShowToast]     = useState(false);
   const [submitting, setSubmitting]   = useState(false);
   const [mainImage, setMainImage]     = useState(null);
-  const [activeColor, setActiveColor] = useState(null); // color_name of selected swatch
+  const [activeColor, setActiveColor] = useState(null);
 
   useEffect(() => {
     api.get(`products/catalog/${slug}/`)
@@ -122,7 +132,6 @@ const ProductDetail = () => {
       .finally(() => setLoading(false));
   }, [slug]);
 
-  // Unique colors for the swatch strip (deduplicated by color_name)
   const uniqueColors = useMemo(() => {
     if (!product) return [];
     const seen = new Map();
@@ -135,7 +144,6 @@ const ProductDetail = () => {
 
   const handleSwatchClick = (colorName) => {
     setActiveColor(colorName);
-    // Find first variation of this color that has its own image
     const match = product.variations.find(
       v => (v.color_name || v.color) === colorName && v.image
     );
@@ -200,16 +208,16 @@ const ProductDetail = () => {
 
         <div className="flex flex-col lg:flex-row gap-8 items-start">
 
-          {/* ── Left panel ─────────────────────────────────────────────── */}
-          <div className="w-full lg:w-72 xl:w-80 shrink-0">
+          {/* ── Left panel — wider for bigger image ────────────────────── */}
+          <div className="w-full lg:w-96 xl:w-[420px] shrink-0">
 
-            {/* Main image — switches on swatch click */}
-            <div className="rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/5 aspect-square shadow-sm">
+            {/* ── Main image with zoom on hover ── */}
+            <div className="rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/5 aspect-square shadow-sm group cursor-zoom-in">
               {mainImage ? (
                 <img
                   src={mainImage}
                   alt={product.name}
-                  className="w-full h-full object-cover transition-opacity duration-200"
+                  className="w-full h-full object-cover transition-transform duration-300 ease-in-out group-hover:scale-110"
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
               ) : (
@@ -219,22 +227,41 @@ const ProductDetail = () => {
               )}
             </div>
 
-            {/* Thumbnail Gallery Strip */}
+            {/* ── Thumbnail strip — bigger thumbnails ── */}
             {product.gallery_images && product.gallery_images.length > 0 && (
               <div className="flex gap-3 mt-4 overflow-x-auto pb-2 scrollbar-hide">
-                <button 
-                  onClick={() => setMainImage(product.image)}
-                  className={`w-16 h-16 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === product.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-700'}`}
-                >
-                  <img src={product.image} alt="Main" className="w-full h-full object-cover" />
-                </button>
+                {/* Featured image as first thumbnail */}
+                {product.image && (
+                  <button
+                    onClick={() => setMainImage(product.image)}
+                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all group ${
+                      mainImage === product.image
+                        ? 'border-accent shadow-sm'
+                        : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'
+                    }`}
+                  >
+                    <img
+                      src={product.image}
+                      alt="Main"
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
+                    />
+                  </button>
+                )}
                 {product.gallery_images.map((img) => (
-                  <button 
+                  <button
                     key={img.id}
                     onClick={() => setMainImage(img.image)}
-                    className={`w-16 h-16 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === img.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-700'}`}
+                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all group ${
+                      mainImage === img.image
+                        ? 'border-accent shadow-sm'
+                        : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'
+                    }`}
                   >
-                    <img src={img.image} alt="Gallery view" className="w-full h-full object-cover" />
+                    <img
+                      src={img.image}
+                      alt={img.alt_text || 'Gallery view'}
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
+                    />
                   </button>
                 ))}
               </div>
@@ -254,8 +281,8 @@ const ProductDetail = () => {
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {uniqueColors.map(v => {
-                      const name    = v.color_name || v.color || '';
-                      const hex     = v.color_hex  || '#CCCCCC';
+                      const name     = v.color_name || v.color || '';
+                      const hex      = v.color_hex  || '#CCCCCC';
                       const isActive = activeColor === name;
                       return (
                         <button
@@ -283,7 +310,7 @@ const ProductDetail = () => {
                 </div>
               )}
 
-              {/* Pricing summary — only for authenticated users */}
+              {/* Pricing summary */}
               {isAuthenticated && firstV && (
                 <div className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-white/5 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -350,20 +377,31 @@ const ProductDetail = () => {
                 </div>
 
                 <div className="overflow-x-auto w-full">
-                  <table className="w-full text-sm min-w-[580px]">
+                  <table className="w-full text-sm min-w-[620px]">
                     <thead>
                       <tr className="text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-widest border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-white/[0.02]">
                         <th className="text-left px-4 py-3">Size / Color</th>
                         <th className="text-left px-4 py-3">SKU</th>
-                        <th className="text-left px-4 py-3">Per Piece</th>
+                        {/* Price: shows b2b price + set price below it */}
+                        <th className="text-left px-4 py-3">Price</th>
+                        {/* MRP/Margin: shows MRP strikethrough + margin % badge */}
+                        <th className="text-left px-4 py-3">MRP / Margin</th>
                         <th className="text-left px-4 py-3 w-24">QTY</th>
                         <th className="text-left px-4 py-3">Line Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {product.variations.map((v, idx) => (
-                        <tr key={v.id} className={`border-b border-gray-100 dark:border-white/5 transition-colors ${quantities[v.id] > 0 ? 'bg-red-50/50 dark:bg-accent/5' : idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-white/[0.02]' : 'bg-white dark:bg-transparent'}`}>
-
+                        <tr
+                          key={v.id}
+                          className={`border-b border-gray-100 dark:border-white/5 transition-colors ${
+                            quantities[v.id] > 0
+                              ? 'bg-red-50/50 dark:bg-accent/5'
+                              : idx % 2 === 0
+                                ? 'bg-gray-50/50 dark:bg-white/[0.02]'
+                                : 'bg-white dark:bg-transparent'
+                          }`}
+                        >
                           {/* Size / Color */}
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div className="flex items-center gap-2">
@@ -376,10 +414,13 @@ const ProductDetail = () => {
                           {/* SKU */}
                           <td className="px-4 py-3 text-gray-400 dark:text-zinc-500 font-mono text-xs">{v.sku}</td>
 
-                          {/* Per piece price + MRP */}
-                          <PriceCell v={v} moq={product.moq} />
+                          {/* Price — b2b price bold, set price (MRP) small below */}
+                          <PriceCell v={v} />
 
-                          {/* QTY input */}
+                          {/* MRP / Margin — MRP strikethrough + margin % only */}
+                          <MrpMarginCell v={v} />
+
+                          {/* QTY */}
                           <td className="px-4 py-3">
                             <input
                               type="number" min="0"
@@ -398,9 +439,8 @@ const ProductDetail = () => {
                   </table>
                 </div>
 
-                {/* Footer — order summary */}
+                {/* Footer */}
                 <div className="px-5 py-4 border-t border-gray-100 dark:border-white/5">
-                  {/* Running total breakdown */}
                   {totalSelected > 0 && (
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl">
                       <div className="flex items-center gap-6 text-sm flex-wrap">
@@ -414,7 +454,7 @@ const ProductDetail = () => {
                             ₹{totalOrderValue.toFixed(2)}
                           </p>
                         </div>
-                        {firstV && (
+                        {firstV && totalSelected > 0 && (
                           <div>
                             <p className="text-gray-400 dark:text-zinc-500 text-xs">Avg. per piece</p>
                             <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">
