@@ -58,21 +58,15 @@ const ZoomableImage = ({ src, alt }) => {
   const [bgPos, setBgPos]       = useState({ x: 0, y: 0 });
 
   const handleMouseMove = useCallback((e) => {
-    const rect  = containerRef.current.getBoundingClientRect();
+    const rect   = containerRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
-    const lensW = rect.width  * 0.4;
-    const lensH = rect.height * 0.4;
-
-    let lx = mouseX - lensW / 2;
-    let ly = mouseY - lensH / 2;
-    lx = Math.max(0, Math.min(lx, rect.width  - lensW));
-    ly = Math.max(0, Math.min(ly, rect.height - lensH));
-
+    const lensW  = rect.width  * 0.4;
+    const lensH  = rect.height * 0.4;
+    let lx = Math.max(0, Math.min(mouseX - lensW / 2, rect.width  - lensW));
+    let ly = Math.max(0, Math.min(mouseY - lensH / 2, rect.height - lensH));
     const lxPct = (lx / rect.width)  * 100;
     const lyPct = (ly / rect.height) * 100;
-
     setLens({ x: lxPct, y: lyPct });
     setBgPos({ x: lxPct * ZOOM_SCALE, y: lyPct * ZOOM_SCALE });
   }, []);
@@ -85,7 +79,6 @@ const ZoomableImage = ({ src, alt }) => {
 
   return (
     <div className="relative" style={{ isolation: 'isolate' }}>
-      {/* Main image */}
       <div
         ref={containerRef}
         className="rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/5 aspect-square shadow-sm cursor-crosshair select-none relative"
@@ -93,93 +86,82 @@ const ZoomableImage = ({ src, alt }) => {
         onMouseLeave={() => setZooming(false)}
         onMouseMove={handleMouseMove}
       >
-        <img
-          src={src}
-          alt={alt}
-          className="w-full h-full object-cover"
-          draggable={false}
-          onError={(e) => { e.target.style.display = 'none'; }}
-        />
-        {/* Lens highlight */}
+        <img src={src} alt={alt} className="w-full h-full object-cover" draggable={false}
+          onError={(e) => { e.target.style.display = 'none'; }} />
         {zooming && (
-          <div
-            className="absolute border-2 border-accent/50 bg-white/20 pointer-events-none"
-            style={{
-              left:   `${lens.x}%`,
-              top:    `${lens.y}%`,
-              width:  '40%',
-              height: '40%',
-            }}
-          />
+          <div className="absolute border-2 border-accent/50 bg-white/20 pointer-events-none"
+            style={{ left: `${lens.x}%`, top: `${lens.y}%`, width: '40%', height: '40%' }} />
         )}
       </div>
-
-      {/* Magnified panel — floats right, outside the container */}
       {zooming && (
-        <div
-          className="absolute top-0 rounded-2xl border border-gray-200 dark:border-white/10 shadow-2xl z-50"
+        <div className="absolute top-0 rounded-2xl border border-gray-200 dark:border-white/10 shadow-2xl z-50"
           style={{
-            left:               'calc(100% + 16px)',
-            width:              '420px',
-            height:             '420px',
-            backgroundImage:    `url(${src})`,
-            backgroundRepeat:   'no-repeat',
-            backgroundSize:     `${ZOOM_SCALE * 100}%`,
+            left: 'calc(100% + 16px)', width: '420px', height: '420px',
+            backgroundImage: `url(${src})`, backgroundRepeat: 'no-repeat',
+            backgroundSize: `${ZOOM_SCALE * 100}%`,
             backgroundPosition: `${bgPos.x}% ${bgPos.y}%`,
-          }}
-        />
+          }} />
       )}
     </div>
   );
 };
 
-// ── Price Cell — Set price primary ────────────────────────────────────────────
+// ── Table Price Cells ─────────────────────────────────────────────────────────
 
-const PriceCell = ({ v }) => {
-  const perPiece = parseFloat(v.b2b_price);
-  const setPrice = v.mrp && parseFloat(v.mrp) > 0 ? parseFloat(v.mrp) : null;
+// Set Price — the total wholesale price for the set
+const SetPriceCell = ({ v }) => (
+  <td className="px-4 py-3">
+    <p className="text-gray-900 dark:text-zinc-100 font-bold text-sm">
+      ₹{parseFloat(v.set_price || v.b2b_price).toFixed(2)}
+    </p>
+  </td>
+);
 
+// Per Piece Price — wholesale price per individual piece
+const PerPiecePriceCell = ({ v }) => {
+  const price = v.per_piece_price ? parseFloat(v.per_piece_price) : null;
+  if (!price) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-sm">—</td>;
   return (
     <td className="px-4 py-3">
-      {setPrice ? (
-        <>
-          <p className="text-gray-900 dark:text-zinc-100 font-bold text-sm">₹{setPrice.toFixed(2)}</p>
-          <p className="text-gray-400 dark:text-zinc-500 text-[10px] mt-0.5">₹{perPiece.toFixed(2)} / pc</p>
-        </>
-      ) : (
-        <p className="text-gray-900 dark:text-zinc-100 font-bold text-sm">₹{perPiece.toFixed(2)}</p>
-      )}
+      <p className="text-gray-700 dark:text-zinc-300 text-sm font-semibold">
+        ₹{price.toFixed(2)}
+      </p>
     </td>
   );
 };
 
-// ── MRP / Margin Cell ─────────────────────────────────────────────────────────
-
-const MrpMarginCell = ({ v }) => {
-  const hasMrp = v.mrp && parseFloat(v.mrp) > 0;
+// MRP Per Piece + Margin badge
+const MrpPerPieceCell = ({ v }) => {
+  const mrpPc = v.mrp_per_piece ? parseFloat(v.mrp_per_piece) : null;
   const margin = v.margin_percentage;
-  if (!hasMrp) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-xs">—</td>;
+
+  if (!mrpPc) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-sm">—</td>;
+
   return (
     <td className="px-4 py-3">
-      <p className="text-gray-400 dark:text-zinc-500 text-xs line-through">MRP ₹{parseFloat(v.mrp).toFixed(2)}</p>
+      {/* MRP — no strikethrough */}
+      <p className="text-gray-700 dark:text-zinc-300 text-sm font-semibold">
+        ₹{mrpPc.toFixed(2)}
+      </p>
+      {/* Margin badge directly below */}
       {margin > 0 && (
-        <span className="inline-flex items-center bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap mt-0.5">
-          {margin}%
+        <span className="inline-flex items-center bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap mt-1">
+          {margin}% margin
         </span>
       )}
     </td>
   );
 };
 
-// ── Total Cell ────────────────────────────────────────────────────────────────
-
+// Line Total
 const TotalCell = ({ v, qty }) => {
   if (!qty || qty === 0) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-sm">—</td>;
-  const total = (parseFloat(v.b2b_price) * qty).toFixed(2);
+  const setPrice = parseFloat(v.set_price || v.b2b_price);
+  const total    = (setPrice * qty).toFixed(2);
   return (
     <td className="px-4 py-3">
       <p className="text-gray-900 dark:text-zinc-100 font-black text-sm">₹{total}</p>
-      <p className="text-gray-400 dark:text-zinc-500 text-[10px]">{qty} pcs</p>
+      <p className="text-gray-400 dark:text-zinc-500 text-[10px]">{qty} sets</p>
     </td>
   );
 };
@@ -234,7 +216,7 @@ const ProductDetail = () => {
   const totalOrderValue = product
     ? Object.entries(quantities).reduce((sum, [id, qty]) => {
         const v = product.variations.find(v => v.id === parseInt(id));
-        return sum + (v ? parseFloat(v.b2b_price) * qty : 0);
+        return sum + (v ? parseFloat(v.set_price || v.b2b_price) * qty : 0);
       }, 0)
     : 0;
 
@@ -279,7 +261,6 @@ const ProductDetail = () => {
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
 
-        {/* overflow visible so zoom panel can escape the left column */}
         <div className="flex flex-col lg:flex-row gap-8 items-start" style={{ overflow: 'visible' }}>
 
           {/* ── Left panel ─────────────────────────────────────────────── */}
@@ -291,19 +272,14 @@ const ProductDetail = () => {
             {product.gallery_images && product.gallery_images.length > 0 && (
               <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
                 {product.image && (
-                  <button
-                    onClick={() => setMainImage(product.image)}
-                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === product.image ? 'border-accent shadow-sm' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}
-                  >
+                  <button onClick={() => setMainImage(product.image)}
+                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === product.image ? 'border-accent shadow-sm' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
                     <img src={product.image} alt="Main" className="w-full h-full object-cover" />
                   </button>
                 )}
                 {product.gallery_images.map((img) => (
-                  <button
-                    key={img.id}
-                    onClick={() => setMainImage(img.image)}
-                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === img.image ? 'border-accent shadow-sm' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}
-                  >
+                  <button key={img.id} onClick={() => setMainImage(img.image)}
+                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === img.image ? 'border-accent shadow-sm' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
                     <img src={img.image} alt={img.alt_text || 'Gallery view'} className="w-full h-full object-cover" />
                   </button>
                 ))}
@@ -316,6 +292,7 @@ const ProductDetail = () => {
                 <h1 className="text-gray-900 dark:text-zinc-100 text-lg font-bold leading-snug mt-0.5">{product.name}</h1>
               </div>
 
+              {/* Color swatches */}
               {uniqueColors.length > 0 && (
                 <div>
                   <p className="text-gray-400 dark:text-zinc-500 text-xs uppercase tracking-widest mb-2">
@@ -323,14 +300,13 @@ const ProductDetail = () => {
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {uniqueColors.map(v => {
-                      const name = v.color_name || v.color || '';
-                      const hex  = v.color_hex  || '#CCCCCC';
+                      const name     = v.color_name || v.color || '';
+                      const hex      = v.color_hex  || '#CCCCCC';
                       const isActive = activeColor === name;
                       return (
                         <button key={name} onClick={() => handleSwatchClick(name)} title={name}
                           className={`w-7 h-7 rounded-full border-2 transition-all ${isActive ? 'border-accent scale-110 shadow-md' : 'border-gray-200 dark:border-white/20 hover:border-gray-400 dark:hover:border-white/40'}`}
-                          style={{ backgroundColor: hex }}
-                        />
+                          style={{ backgroundColor: hex }} />
                       );
                     })}
                     {activeColor && (
@@ -343,16 +319,29 @@ const ProductDetail = () => {
                 </div>
               )}
 
+              {/* Pricing summary */}
               {isAuthenticated && firstV && (
                 <div className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-white/5 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-400 dark:text-zinc-500 text-xs">Per piece</span>
-                    <span className="text-gray-900 dark:text-zinc-100 font-bold text-sm">₹{parseFloat(firstV.b2b_price).toFixed(2)}</span>
+                    <span className="text-gray-400 dark:text-zinc-500 text-xs">Set price</span>
+                    <span className="text-gray-900 dark:text-zinc-100 font-bold text-sm">
+                      ₹{parseFloat(firstV.set_price || firstV.b2b_price).toFixed(2)}
+                    </span>
                   </div>
-                  {firstV.mrp && parseFloat(firstV.mrp) > 0 && (
+                  {firstV.per_piece_price && (
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-400 dark:text-zinc-500 text-xs">MRP</span>
-                      <span className="text-gray-400 dark:text-zinc-600 text-xs line-through">₹{parseFloat(firstV.mrp).toFixed(2)}</span>
+                      <span className="text-gray-400 dark:text-zinc-500 text-xs">Per piece</span>
+                      <span className="text-gray-700 dark:text-zinc-300 font-semibold text-sm">
+                        ₹{parseFloat(firstV.per_piece_price).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {firstV.mrp_per_piece && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 dark:text-zinc-500 text-xs">MRP / piece</span>
+                      <span className="text-gray-700 dark:text-zinc-300 text-sm">
+                        ₹{parseFloat(firstV.mrp_per_piece).toFixed(2)}
+                      </span>
                     </div>
                   )}
                   {firstV.margin_percentage > 0 && (
@@ -365,7 +354,9 @@ const ProductDetail = () => {
                   )}
                   <div className="flex items-center justify-between border-t border-gray-100 dark:border-white/5 pt-1.5">
                     <span className="text-gray-500 dark:text-zinc-400 text-xs font-semibold">Min. order total</span>
-                    <span className="text-accent font-black text-base">₹{(parseFloat(firstV.b2b_price) * product.moq).toFixed(2)}</span>
+                    <span className="text-accent font-black text-base">
+                      ₹{(parseFloat(firstV.set_price || firstV.b2b_price) * product.moq).toFixed(2)}
+                    </span>
                   </div>
                 </div>
               )}
@@ -401,20 +392,30 @@ const ProductDetail = () => {
                 </div>
 
                 <div className="overflow-x-auto w-full">
-                  <table className="w-full text-sm min-w-[620px]">
+                  <table className="w-full text-sm min-w-[700px]">
                     <thead>
                       <tr className="text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-widest border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-white/[0.02]">
                         <th className="text-left px-4 py-3">Size / Color</th>
                         <th className="text-left px-4 py-3">SKU</th>
                         <th className="text-left px-4 py-3">Set Price</th>
-                        <th className="text-left px-4 py-3">MRP / Margin</th>
+                        <th className="text-left px-4 py-3">Per Piece</th>
+                        <th className="text-left px-4 py-3">MRP / Piece</th>
                         <th className="text-left px-4 py-3 w-24">QTY</th>
                         <th className="text-left px-4 py-3">Line Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {product.variations.map((v, idx) => (
-                        <tr key={v.id} className={`border-b border-gray-100 dark:border-white/5 transition-colors ${quantities[v.id] > 0 ? 'bg-red-50/50 dark:bg-accent/5' : idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-white/[0.02]' : 'bg-white dark:bg-transparent'}`}>
+                        <tr key={v.id}
+                          className={`border-b border-gray-100 dark:border-white/5 transition-colors ${
+                            quantities[v.id] > 0
+                              ? 'bg-red-50/50 dark:bg-accent/5'
+                              : idx % 2 === 0
+                                ? 'bg-gray-50/50 dark:bg-white/[0.02]'
+                                : 'bg-white dark:bg-transparent'
+                          }`}>
+
+                          {/* Size / Color */}
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <span className="text-gray-700 dark:text-zinc-300 font-semibold text-xs">{v.size}</span>
@@ -422,9 +423,20 @@ const ProductDetail = () => {
                               <ColorSwatch hex={v.color_hex || '#CCCCCC'} name={v.color_name || v.color} />
                             </div>
                           </td>
+
+                          {/* SKU */}
                           <td className="px-4 py-3 text-gray-400 dark:text-zinc-500 font-mono text-xs">{v.sku}</td>
-                          <PriceCell v={v} />
-                          <MrpMarginCell v={v} />
+
+                          {/* Set Price */}
+                          <SetPriceCell v={v} />
+
+                          {/* Per Piece Price */}
+                          <PerPiecePriceCell v={v} />
+
+                          {/* MRP Per Piece + Margin */}
+                          <MrpPerPieceCell v={v} />
+
+                          {/* QTY */}
                           <td className="px-4 py-3">
                             <input type="number" min="0"
                               value={quantities[v.id] || ''}
@@ -433,6 +445,8 @@ const ProductDetail = () => {
                               className="w-16 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-accent transition-colors"
                             />
                           </td>
+
+                          {/* Line Total */}
                           <TotalCell v={v} qty={quantities[v.id] || 0} />
                         </tr>
                       ))}
@@ -440,27 +454,33 @@ const ProductDetail = () => {
                   </table>
                 </div>
 
+                {/* Footer */}
                 <div className="px-5 py-4 border-t border-gray-100 dark:border-white/5">
                   {totalSelected > 0 && (
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl">
                       <div className="flex items-center gap-6 text-sm flex-wrap">
                         <div>
-                          <p className="text-gray-400 dark:text-zinc-500 text-xs">Units selected</p>
+                          <p className="text-gray-400 dark:text-zinc-500 text-xs">Sets selected</p>
                           <p className="text-gray-900 dark:text-zinc-100 font-bold">{totalSelected}</p>
                         </div>
                         <div>
                           <p className="text-gray-400 dark:text-zinc-500 text-xs">Order total</p>
-                          <p className="text-gray-900 dark:text-zinc-100 font-black text-lg">₹{totalOrderValue.toFixed(2)}</p>
+                          <p className="text-gray-900 dark:text-zinc-100 font-black text-lg">
+                            ₹{totalOrderValue.toFixed(2)}
+                          </p>
                         </div>
                         {firstV && totalSelected > 0 && (
                           <div>
-                            <p className="text-gray-400 dark:text-zinc-500 text-xs">Avg. per piece</p>
-                            <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">₹{(totalOrderValue / totalSelected).toFixed(2)}</p>
+                            <p className="text-gray-400 dark:text-zinc-500 text-xs">Avg. per set</p>
+                            <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">
+                              ₹{(totalOrderValue / totalSelected).toFixed(2)}
+                            </p>
                           </div>
                         )}
                       </div>
                     </div>
                   )}
+
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div>
                       {error && (
@@ -469,7 +489,9 @@ const ProductDetail = () => {
                         </div>
                       )}
                       {!error && totalSelected === 0 && (
-                        <p className="text-gray-400 dark:text-zinc-500 text-xs">Enter quantities above. Min. order: {product.moq} units.</p>
+                        <p className="text-gray-400 dark:text-zinc-500 text-xs">
+                          Enter quantities above. Min. order: {product.moq} units.
+                        </p>
                       )}
                     </div>
                     <button onClick={handleBulkAdd} disabled={submitting}

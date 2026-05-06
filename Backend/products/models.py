@@ -73,8 +73,17 @@ class ProductVariation(models.Model):
     sku            = models.CharField(max_length=100, unique=True)
 
     # Prices — always stored and handled as Decimal, never float
-    b2b_price      = models.DecimalField(max_digits=10, decimal_places=2)
-    mrp            = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    b2b_price       = models.DecimalField(max_digits=10, decimal_places=2,
+                                          help_text='Set price (total wholesale price for the full set)')
+    per_piece_price = models.DecimalField(max_digits=10, decimal_places=2,
+                                          null=True, blank=True,
+                                          help_text='Wholesale price per individual piece in the set')
+    mrp             = models.DecimalField(max_digits=10, decimal_places=2,
+                                          null=True, blank=True,
+                                          help_text='MRP for the full set')
+    mrp_per_piece   = models.DecimalField(max_digits=10, decimal_places=2,
+                                          null=True, blank=True,
+                                          help_text='MRP per individual piece in the set')
 
     stock_quantity = models.PositiveIntegerField(default=0)
     image          = models.ImageField(upload_to='variations/', null=True, blank=True)
@@ -84,21 +93,19 @@ class ProductVariation(models.Model):
         verbose_name    = "Product Variation"
 
     def save(self, *args, **kwargs):
-        # ── Decimal safety: ensure prices are always exact Decimal values ──
-        # This guards against any caller passing a float (e.g. from JSON)
-        if self.b2b_price is not None and not isinstance(self.b2b_price, Decimal):
-            self.b2b_price = Decimal(str(self.b2b_price)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        if self.mrp is not None and not isinstance(self.mrp, Decimal):
-            self.mrp = Decimal(str(self.mrp)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        # ── Decimal safety ──
+        for field in ('b2b_price', 'per_piece_price', 'mrp', 'mrp_per_piece'):
+            val = getattr(self, field)
+            if val is not None and not isinstance(val, Decimal):
+                setattr(self, field,
+                        Decimal(str(val)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
 
-        # ── Color sync: copy color_palette.name → color CharField ──
+        # ── Color sync ──
         if self.color_palette_id:
-            # Try the already-loaded relation first (avoids extra query)
             palette = self.__dict__.get('color_palette')
             if palette is not None:
                 self.color = palette.name
             else:
-                # Fresh admin form save — relation not in cache, fetch name only
                 color_name = Color.objects.filter(
                     pk=self.color_palette_id
                 ).values_list('name', flat=True).first()
@@ -108,7 +115,6 @@ class ProductVariation(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        # Safe __str__ that never triggers an extra query
         product_name = (
             self.__dict__['product'].name
             if 'product' in self.__dict__
