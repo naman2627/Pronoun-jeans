@@ -55,34 +55,53 @@ class CartItem(models.Model):
 
 
 class Order(models.Model):
+
     class Status(models.TextChoices):
-        PENDING   = 'PENDING',   'Pending'
-        APPROVED  = 'APPROVED',  'Approved'
-        SHIPPED   = 'SHIPPED',   'Shipped'
-        DELIVERED = 'DELIVERED', 'Delivered'
-        CANCELLED = 'CANCELLED', 'Cancelled'
+        PENDING_VERIFICATION = 'PENDING_VERIFICATION', 'Pending Verification'
+        PENDING              = 'PENDING',   'Pending'
+        APPROVED             = 'APPROVED',  'Approved'
+        SHIPPED              = 'SHIPPED',   'Shipped'
+        DELIVERED            = 'DELIVERED', 'Delivered'
+        CANCELLED            = 'CANCELLED', 'Cancelled'
 
     class PaymentMethod(models.TextChoices):
-        RAZORPAY      = 'razorpay',      'Razorpay'
-        NET_30        = 'net_30',        'Net 30 Terms'
-        BANK_TRANSFER = 'bank_transfer', 'Direct Bank Transfer'
+        RAZORPAY   = 'razorpay',    'Razorpay'
+        DIRECT_UPI = 'direct_upi',  'Direct UPI'
 
     class PaymentStatus(models.TextChoices):
-        PENDING = 'pending', 'Pending'
-        PAID    = 'paid',    'Paid'
-        FAILED  = 'failed',  'Failed'
+        PENDING  = 'pending',  'Pending'
+        PAID     = 'paid',     'Paid'
+        PARTIAL  = 'partial',  'Partial'
+        FAILED   = 'failed',   'Failed'
+
+    class PaymentPlan(models.TextChoices):
+        ADVANCE = 'advance', '10% Advance'
+        FULL    = 'full',    'Full Payment (1% off)'
 
     user             = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='orders')
     shipping_address = models.ForeignKey('accounts.Address', null=True, blank=True, on_delete=models.SET_NULL, related_name='shipping_orders')
     billing_address  = models.ForeignKey('accounts.Address', null=True, blank=True, on_delete=models.SET_NULL, related_name='billing_orders')
-    status           = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
-    payment_method   = models.CharField(max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.BANK_TRANSFER)
+    status           = models.CharField(max_length=30, choices=Status.choices, default=Status.PENDING)
+    payment_method   = models.CharField(max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.DIRECT_UPI)
     payment_status   = models.CharField(max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.PENDING)
     total_amount     = models.DecimalField(max_digits=10, decimal_places=2)
 
     # Coupon / discount
     coupon          = models.ForeignKey(Coupon, null=True, blank=True, on_delete=models.SET_NULL, related_name='orders')
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    # Direct UPI fields
+    payment_plan      = models.CharField(max_length=10, choices=PaymentPlan.choices, null=True, blank=True)
+    upi_discount      = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                            help_text='Extra 1% discount given for full UPI payment')
+    amount_paid       = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                            help_text='Amount the buyer has paid / is expected to pay now')
+    balance_due       = models.DecimalField(max_digits=10, decimal_places=2, default=0,
+                                            help_text='Remaining balance after advance payment')
+    utr_number        = models.CharField(max_length=50, null=True, blank=True,
+                                         help_text='UPI Transaction Reference ID provided by buyer')
+    payment_verified  = models.BooleanField(default=False,
+                                            help_text='Admin toggles this after confirming payment in bank')
 
     # Razorpay transaction fields
     razorpay_order_id   = models.CharField(max_length=100, null=True, blank=True)
@@ -100,7 +119,15 @@ class Order(models.Model):
     @property
     def grand_total(self):
         from decimal import Decimal
-        return max(self.total_amount - Decimal(str(self.discount_amount)), Decimal('0'))
+        subtotal = max(self.total_amount - Decimal(str(self.discount_amount)), Decimal('0'))
+        return max(subtotal - Decimal(str(self.upi_discount)), Decimal('0'))
+
+    def save(self, *args, **kwargs):
+        # Auto-approve when admin verifies the UPI payment
+        if self.payment_verified and self.status == self.Status.PENDING_VERIFICATION:
+            self.status         = self.Status.APPROVED
+            self.payment_status = self.PaymentStatus.PAID if self.balance_due == 0 else self.PaymentStatus.PARTIAL
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Order#{self.pk} — {self.user.email} [{self.status}]"

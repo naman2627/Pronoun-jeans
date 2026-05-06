@@ -4,6 +4,7 @@ from .views import (
     CheckoutView, OrderHistoryView,
     ApplyCouponView, ActiveCouponsListView,
     RazorpayCreateOrderView, RazorpayVerifyPaymentView,
+    DirectUPICheckoutView,
     AgentCommissionsListView, AgentLedgerSummaryView,
     AgentSampleOrdersListView, AgentOrdersListView,
     AgentOrderTrackingUpdateView, OrderTrackingTimelineView,
@@ -19,23 +20,24 @@ urlpatterns = [
     path('cart/apply-coupon/', ApplyCouponView.as_view(),      name='apply-coupon'),
     path('coupons/active/',    ActiveCouponsListView.as_view(), name='active-coupons'),
 
+    # Direct UPI
+    path('upi/checkout/', DirectUPICheckoutView.as_view(), name='upi-checkout'),
+
     # Razorpay
-    path('razorpay/create/', RazorpayCreateOrderView.as_view(),   name='razorpay-create'),
-    path('razorpay/verify/', RazorpayVerifyPaymentView.as_view(),  name='razorpay-verify'),
+    path('razorpay/create/', RazorpayCreateOrderView.as_view(),  name='razorpay-create'),
+    path('razorpay/verify/', RazorpayVerifyPaymentView.as_view(), name='razorpay-verify'),
 
-    # Checkout (non-Razorpay) & history
-    path('checkout/', CheckoutView.as_view(),    name='checkout'),
-    path('history/',  OrderHistoryView.as_view(), name='order-history'),
+    # Standard checkout (disabled — returns error pointing to correct endpoints)
+    path('checkout/', CheckoutView.as_view(), name='checkout'),
 
-    # Agent — commissions & ledger
-    path('agent/commissions/', AgentCommissionsListView.as_view(), name='agent-commissions'),
-    path('agent/ledger/',      AgentLedgerSummaryView.as_view(),   name='agent-ledger'),
+    # History
+    path('history/', OrderHistoryView.as_view(), name='order-history'),
 
-    # Agent — sample orders & buyer orders
-    path('agent/sample-orders/', AgentSampleOrdersListView.as_view(), name='agent-sample-orders'),
-    path('agent/orders/',        AgentOrdersListView.as_view(),        name='agent-orders'),
-
-    # Agent — per-order actions
+    # Agent
+    path('agent/commissions/',                    AgentCommissionsListView.as_view(),    name='agent-commissions'),
+    path('agent/ledger/',                         AgentLedgerSummaryView.as_view(),      name='agent-ledger'),
+    path('agent/sample-orders/',                  AgentSampleOrdersListView.as_view(),   name='agent-sample-orders'),
+    path('agent/orders/',                         AgentOrdersListView.as_view(),         name='agent-orders'),
     path('agent/orders/<int:pk>/tracking/',       AgentOrderTrackingUpdateView.as_view(), name='agent-order-tracking'),
-    path('agent/orders/<int:pk>/track-timeline/', OrderTrackingTimelineView.as_view(),    name='order-track-timeline'),
+    path('agent/orders/<int:pk>/track-timeline/', OrderTrackingTimelineView.as_view(),   name='order-track-timeline'),
 ]
