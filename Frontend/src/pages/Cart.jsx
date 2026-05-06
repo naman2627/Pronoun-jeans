@@ -11,7 +11,7 @@ import api from '../api/axios';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const UPI_ID       = 'pronoun@kotak';
+const UPI_ID        = 'pronoun@kotak';
 const BUSINESS_NAME = 'Pronoun Jeans';
 
 // ── Razorpay loader ───────────────────────────────────────────────────────────
@@ -26,11 +26,37 @@ const loadRazorpayScript = () =>
     document.body.appendChild(s);
   });
 
+// ── GST Math ──────────────────────────────────────────────────────────────────
+//
+// All prices in the system are GST-inclusive (5% baked in).
+// Rule:
+//   base      = subtotal * 0.95       (GST-exclusive portion)
+//   gst       = subtotal * 0.05       (GST portion — fixed, never discounted)
+//   discount  = base * discountPct    (discount only on base)
+//   discBase  = base - discount
+//   grandTotal = discBase + gst
+//
+// For UPI full payment, an extra 1% is also applied on the base only.
+//
+// discountPct is the combined percentage expressed as a decimal
+// e.g. 2% coupon + 1% UPI = 0.03
+
+const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
+  const r2    = (n) => Math.round(n * 100) / 100;
+  const base  = r2(subtotal * 0.95);
+  const gst   = r2(subtotal * 0.05);
+  const totalDiscPct  = couponPct + upiDiscPct;          // e.g. 0.02 + 0.01 = 0.03
+  const couponDisc    = r2(base * couponPct);
+  const upiDisc       = r2(base * upiDiscPct);
+  const totalDisc     = r2(base * totalDiscPct);
+  const discBase      = r2(base - totalDisc);
+  const grandTotal    = r2(discBase + gst);
+  return { base, gst, couponDisc, upiDisc, totalDisc, discBase, grandTotal };
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const fmt    = (n)  => parseFloat(n || 0).toFixed(2);
-const round2 = (n)  => Math.round(n * 100) / 100;
-
+const fmt        = (n) => parseFloat(n || 0).toFixed(2);
 const buildUpiUri = (amount, note = 'B2B Order') =>
   `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(BUSINESS_NAME)}&am=${fmt(amount)}&cu=INR&tn=${encodeURIComponent(note)}`;
 
@@ -105,12 +131,8 @@ const CartRow = ({ item, index, onQtyChange, saving }) => {
   return (
     <tr className={`border-b border-gray-100 dark:border-white/5 ${index % 2 === 0 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : 'bg-white dark:bg-transparent'}`}>
       <td className="px-6 py-4">
-        <div className="flex items-start gap-3">
-          <div>
-            <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug max-w-[220px]">{variation?.product_name ?? '—'}</p>
-            <p className="text-gray-400 dark:text-zinc-500 text-xs font-mono mt-0.5">{variation?.sku ?? ''}</p>
-          </div>
-        </div>
+        <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug max-w-[220px]">{variation?.product_name ?? '—'}</p>
+        <p className="text-gray-400 dark:text-zinc-500 text-xs font-mono mt-0.5">{variation?.sku ?? ''}</p>
       </td>
       <td className="px-6 py-4 text-gray-600 dark:text-zinc-300 text-sm">{variation?.size ?? '—'}</td>
       <td className="px-6 py-4 text-sm">
@@ -158,9 +180,9 @@ const AddressCard = ({ addr, selected, onSelect, type }) => {
 
 // ── Available Offers ──────────────────────────────────────────────────────────
 
-const couponLabel = (c) => c.discount_type === 'percentage' ? `${c.discount_value}% Off` : `Flat ₹${parseFloat(c.discount_value).toFixed(0)} Off`;
+const couponLabel = (c) => `${c.discount_value}% Off`;
 
-const AvailableOffers = ({ coupons, cartTotal, appliedCoupon, onApply, onRemove }) => {
+const AvailableOffers = ({ coupons, subtotal, appliedCoupon, onApply, onRemove }) => {
   const [expanded, setExpanded]           = useState(true);
   const [loading, setLoading]             = useState(null);
   const [manualCode, setManualCode]       = useState('');
@@ -176,9 +198,12 @@ const AvailableOffers = ({ coupons, cartTotal, appliedCoupon, onApply, onRemove 
   const handleManualApply = async () => {
     if (!manualCode.trim()) return;
     setManualLoading(true); setManualError('');
-    try { const res = await api.post('orders/cart/apply-coupon/', { coupon_code: manualCode.trim() }); onApply(res.data); setManualCode(''); }
-    catch (err) { setManualError(err.response?.data?.error || 'Invalid coupon code.'); }
-    finally { setManualLoading(false); }
+    try {
+      const res = await api.post('orders/cart/apply-coupon/', { coupon_code: manualCode.trim() });
+      onApply(res.data); setManualCode('');
+    } catch (err) {
+      setManualError(err.response?.data?.error || 'Invalid coupon code.');
+    } finally { setManualLoading(false); }
   };
 
   return (
@@ -199,17 +224,18 @@ const AvailableOffers = ({ coupons, cartTotal, appliedCoupon, onApply, onRemove 
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
                 <span className="text-green-700 dark:text-green-400 text-sm font-bold">{appliedCoupon.coupon_code}</span>
-                <span className="text-green-600 text-xs">saving ₹{parseFloat(appliedCoupon.discount_amount).toFixed(2)}</span>
+                <span className="text-green-600 text-xs">−₹{fmt(appliedCoupon.coupon_disc_amount)} on base</span>
               </div>
               <button onClick={onRemove}><X className="w-4 h-4 text-green-500 hover:text-red-500 transition-colors" /></button>
             </div>
           )}
           {coupons.map(c => {
-            const minVal   = parseFloat(c.min_order_value);
-            const unlocked = cartTotal >= minVal;
+            const minVal    = parseFloat(c.min_order_value);
+            const unlocked  = subtotal >= minVal;
+            const shortfall = minVal - subtotal;
             const isApplied = appliedCoupon?.coupon_code === c.code;
             return (
-              <div key={c.id} className={`rounded-xl border p-3 ${isApplied ? 'border-green-200 bg-green-50/50 dark:bg-green-500/5' : unlocked ? 'border-gray-200 dark:border-white/10 bg-white dark:bg-zinc-800' : 'border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-zinc-900/50'}`}>
+              <div key={c.id} className={`rounded-xl border p-3 ${isApplied ? 'border-green-200 bg-green-50/50' : unlocked ? 'border-gray-200 dark:border-white/10 bg-white dark:bg-zinc-800' : 'border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-zinc-900/50'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-2.5 flex-1">
                     <div className={`mt-0.5 ${unlocked ? 'text-accent' : 'text-gray-300 dark:text-zinc-600'}`}>
@@ -220,11 +246,23 @@ const AvailableOffers = ({ coupons, cartTotal, appliedCoupon, onApply, onRemove 
                         <span className="font-mono font-bold text-sm text-gray-900 dark:text-zinc-100">{c.code}</span>
                         <span className="text-accent text-xs font-bold">{couponLabel(c)}</span>
                       </div>
-                      {!unlocked && <p className="text-yellow-600 text-xs mt-0.5">Add ₹{(minVal - cartTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })} more to unlock</p>}
+                      {!unlocked && (
+                        <p className="text-yellow-600 text-xs mt-0.5">
+                          Add ₹{shortfall.toLocaleString('en-IN', { maximumFractionDigits: 0 })} more to unlock
+                        </p>
+                      )}
+                      {unlocked && minVal > 0 && (
+                        <p className="text-gray-400 text-xs mt-0.5">
+                          Min order ₹{minVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  {isApplied ? <span className="text-green-600 text-xs font-bold">Applied ✓</span> : (
-                    <button onClick={() => unlocked && handleApplyCode(c.code)} disabled={!unlocked || !!appliedCoupon || loading === c.code}
+                  {isApplied ? (
+                    <span className="text-green-600 text-xs font-bold">Applied ✓</span>
+                  ) : (
+                    <button onClick={() => unlocked && handleApplyCode(c.code)}
+                      disabled={!unlocked || !!appliedCoupon || loading === c.code}
                       className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${unlocked && !appliedCoupon ? 'bg-accent/10 text-accent hover:bg-accent hover:text-white border border-accent/20' : 'text-gray-300 dark:text-zinc-600 cursor-not-allowed'}`}>
                       {loading === c.code ? <Loader className="animate-spin w-3 h-3" /> : 'Apply'}
                     </button>
@@ -233,6 +271,7 @@ const AvailableOffers = ({ coupons, cartTotal, appliedCoupon, onApply, onRemove 
               </div>
             );
           })}
+
           <div className="pt-1 space-y-1.5">
             <div className="flex gap-2">
               <input type="text" value={manualCode} onChange={e => setManualCode(e.target.value.toUpperCase())}
@@ -251,21 +290,141 @@ const AvailableOffers = ({ coupons, cartTotal, appliedCoupon, onApply, onRemove 
   );
 };
 
+// ── Order Summary ─────────────────────────────────────────────────────────────
+// Shows the full GST breakdown:
+//   Subtotal (inclusive)
+//   ├── Base (95%)       ₹X
+//   │   └── Discount     −₹Y  (coupon on base)
+//   │   └── UPI Disc     −₹Z  (extra 1% on base, if full UPI)
+//   │   = Discounted Base ₹W
+//   ├── GST (5%)         ₹G   (unchanged — discount never touches GST)
+//   Grand Total          ₹T
+
+const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onCouponApply, onCouponRemove }) => {
+  const subtotal    = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
+  const couponPct   = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
+  const totalUnits  = items.reduce((s, i) => s + i.quantity, 0);
+
+  const { base, gst, couponDisc, upiDisc, totalDisc, discBase, grandTotal } =
+    calcGST(subtotal, couponPct, upiDiscPct);
+
+  // Store coupon_disc_amount on couponData so AvailableOffers can display it
+  if (couponData && couponData.coupon_disc_amount === undefined) {
+    couponData.coupon_disc_amount = couponDisc;
+  }
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 space-y-4 sticky top-6 shadow-sm">
+      <div className="flex items-center gap-2 pb-3 border-b border-gray-100 dark:border-white/5">
+        <ReceiptText className="w-5 h-5 text-accent" />
+        <h2 className="text-gray-900 dark:text-zinc-100 font-bold text-lg">Order Summary</h2>
+      </div>
+
+      {/* Meta */}
+      <div className="space-y-1.5 text-sm">
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+          <span>SKU Lines</span><span className="font-semibold text-gray-900 dark:text-zinc-100">{items.length}</span>
+        </div>
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+          <span>Total Units</span><span className="font-semibold text-gray-900 dark:text-zinc-100">{totalUnits}</span>
+        </div>
+      </div>
+
+      {/* GST Breakdown */}
+      <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-3.5 space-y-2 text-sm border border-gray-100 dark:border-white/5">
+        {/* Subtotal inclusive */}
+        <div className="flex justify-between text-gray-700 dark:text-zinc-300">
+          <span className="font-semibold">Subtotal (incl. GST)</span>
+          <span className="font-semibold">₹{fmt(subtotal)}</span>
+        </div>
+
+        <div className="border-t border-gray-200 dark:border-white/10 pt-2 space-y-1.5">
+          {/* Base 95% */}
+          <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+            <span>Base (95%)</span><span>₹{fmt(base)}</span>
+          </div>
+
+          {/* Coupon discount on base */}
+          {couponDisc > 0 && (
+            <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
+              <span>Coupon ({(couponPct * 100).toFixed(0)}% on base)</span>
+              <span>−₹{fmt(couponDisc)}</span>
+            </div>
+          )}
+
+          {/* UPI 1% discount on base */}
+          {upiDisc > 0 && (
+            <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
+              <span>Full UPI (1% on base)</span>
+              <span>−₹{fmt(upiDisc)}</span>
+            </div>
+          )}
+
+          {/* Discounted base */}
+          {totalDisc > 0 && (
+            <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-dashed border-gray-200 dark:border-white/10 pt-1.5">
+              <span className="font-semibold">Discounted Base</span>
+              <span className="font-semibold">₹{fmt(discBase)}</span>
+            </div>
+          )}
+
+          {/* GST — always on original full subtotal's 5% split */}
+          <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+            <span>GST @ 5%</span><span>₹{fmt(gst)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Coupons */}
+      <AvailableOffers
+        coupons={availableCoupons}
+        subtotal={subtotal}
+        appliedCoupon={couponData}
+        onApply={onCouponApply}
+        onRemove={onCouponRemove}
+      />
+
+      {/* Grand Total */}
+      <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-xl px-4 py-3">
+        <span className="text-accent font-bold text-sm uppercase tracking-widest">Grand Total</span>
+        <span className="text-gray-900 dark:text-zinc-100 font-extrabold text-xl">₹{fmt(grandTotal)}</span>
+      </div>
+
+      {totalDisc > 0 && (
+        <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">
+          You save ₹{fmt(totalDisc)} on this order 🎉
+        </p>
+      )}
+    </div>
+  );
+};
+
 // ── Direct UPI Panel ──────────────────────────────────────────────────────────
 
 const DirectUPIPanel = ({
-  grandTotal, paymentPlan, setPaymentPlan,
+  subtotal, couponPct,
+  paymentPlan, setPaymentPlan,
   utrNumber, setUtrNumber,
   onConfirm, confirming,
 }) => {
   const [copied, setCopied] = useState(false);
+  const upiDiscPct = paymentPlan === 'full' ? 0.01 : 0;
 
-  const couponSubtotal = grandTotal; // grandTotal already has coupon discount applied
-  const upiDiscount    = paymentPlan === 'full' ? round2(couponSubtotal * 0.01) : 0;
-  const finalTotal     = round2(couponSubtotal - upiDiscount);
-  const payableNow     = paymentPlan === 'advance' ? round2(finalTotal * 0.10) : finalTotal;
+  const { gst, couponDisc, upiDisc, discBase, grandTotal } =
+    calcGST(subtotal, couponPct, upiDiscPct);
 
-  const upiUri = buildUpiUri(payableNow, `Pronoun Jeans Order - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
+  const payableNow = paymentPlan === 'advance'
+    ? Math.round(grandTotal * 0.10 * 100) / 100
+    : grandTotal;
+
+  const balanceDue = paymentPlan === 'advance'
+    ? Math.round((grandTotal - payableNow) * 100) / 100
+    : 0;
+
+  const upiUri = buildUpiUri(
+    payableNow,
+    `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`
+  );
 
   const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 
@@ -277,47 +436,53 @@ const DirectUPIPanel = ({
 
   return (
     <div className="space-y-5">
-      {/* Payment Plan Toggle */}
+      {/* Plan toggle */}
       <div>
-        <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest mb-3">
-          Choose Payment Plan
-        </p>
+        <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest mb-3">Choose Payment Plan</p>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { value: 'advance', label: '10% Advance', sub: 'Pay 10% now, rest on delivery' },
-            { value: 'full',    label: 'Full Payment', sub: 'Extra 1% off on full payment' },
+            { value: 'advance', label: '10% Advance',   sub: 'Pay 10% now, rest on delivery' },
+            { value: 'full',    label: 'Full Payment',   sub: 'Extra 1% off on base price'    },
           ].map(opt => (
             <label key={opt.value} onClick={() => setPaymentPlan(opt.value)}
-              className={`cursor-pointer rounded-xl border p-3.5 transition-all ${paymentPlan === opt.value ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300 dark:hover:border-white/20'}`}>
+              className={`cursor-pointer rounded-xl border p-3.5 transition-all ${paymentPlan === opt.value ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300'}`}>
               <div className="flex items-center gap-2 mb-1">
                 <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${paymentPlan === opt.value ? 'border-accent' : 'border-gray-300 dark:border-zinc-600'}`}>
                   {paymentPlan === opt.value && <div className="w-2 h-2 rounded-full bg-accent" />}
                 </div>
                 <p className={`text-sm font-bold ${paymentPlan === opt.value ? 'text-accent' : 'text-gray-900 dark:text-zinc-100'}`}>{opt.label}</p>
               </div>
-              <p className="text-gray-500 dark:text-zinc-400 text-xs pl-6">{opt.sub}</p>
+              <p className="text-gray-500 text-xs pl-6">{opt.sub}</p>
             </label>
           ))}
         </div>
       </div>
 
-      {/* Pricing Breakdown */}
-      <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 space-y-2 text-sm">
-        <div className="flex items-center justify-between text-gray-500 dark:text-zinc-400">
-          <span>Cart Total</span><span className="font-semibold text-gray-900 dark:text-zinc-100">₹{fmt(couponSubtotal)}</span>
-        </div>
-        {paymentPlan === 'full' && (
-          <div className="flex items-center justify-between text-green-600 dark:text-green-400 font-semibold">
-            <span>Full Payment Discount (1%)</span><span>−₹{fmt(upiDiscount)}</span>
+      {/* Pricing breakdown for UPI */}
+      <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 space-y-2 text-sm border border-gray-100 dark:border-white/5">
+        {couponDisc > 0 && (
+          <div className="flex justify-between text-green-600 font-semibold">
+            <span>Coupon discount (on base)</span><span>−₹{fmt(couponDisc)}</span>
           </div>
         )}
-        <div className="flex items-center justify-between border-t border-gray-200 dark:border-white/10 pt-2">
-          <span className="text-gray-700 dark:text-zinc-300 font-semibold">Order Total</span>
-          <span className="text-gray-900 dark:text-zinc-100 font-black">₹{fmt(finalTotal)}</span>
+        {upiDisc > 0 && (
+          <div className="flex justify-between text-green-600 font-semibold">
+            <span>Full UPI discount 1% (on base)</span><span>−₹{fmt(upiDisc)}</span>
+          </div>
+        )}
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+          <span>Discounted Base</span><span>₹{fmt(discBase)}</span>
+        </div>
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+          <span>GST (5%)</span><span>₹{fmt(gst)}</span>
+        </div>
+        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2">
+          <span className="font-semibold">Order Total</span>
+          <span className="font-bold">₹{fmt(grandTotal)}</span>
         </div>
         {paymentPlan === 'advance' && (
-          <div className="flex items-center justify-between text-gray-500 dark:text-zinc-400">
-            <span>Balance Due Later</span><span>₹{fmt(round2(finalTotal * 0.90))}</span>
+          <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+            <span>Balance Due Later</span><span>₹{fmt(balanceDue)}</span>
           </div>
         )}
         <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-lg px-3 py-2 mt-1">
@@ -330,65 +495,42 @@ const DirectUPIPanel = ({
       <div className="flex flex-col items-center gap-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
         <p className="text-gray-700 dark:text-zinc-300 text-sm font-bold">Scan to Pay ₹{fmt(payableNow)}</p>
         <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
-          <QRCodeSVG
-            value={upiUri}
-            size={200}
-            level="H"
-            includeMargin={false}
-          />
+          <QRCodeSVG value={upiUri} size={200} level="H" includeMargin={false} />
         </div>
-
-        {/* UPI ID copy */}
         <div className="flex items-center gap-2 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2 w-full justify-between">
           <div>
-            <p className="text-gray-400 dark:text-zinc-500 text-[10px] uppercase tracking-widest">UPI ID</p>
+            <p className="text-gray-400 text-[10px] uppercase tracking-widest">UPI ID</p>
             <p className="text-gray-900 dark:text-zinc-100 font-mono font-bold text-sm">{UPI_ID}</p>
           </div>
-          <button onClick={handleCopyUpi}
-            className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-red-700 transition-colors">
+          <button onClick={handleCopyUpi} className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-red-700 transition-colors">
             {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
           </button>
         </div>
-
-        {/* Mobile deep link */}
         {isMobile ? (
-          <a href={upiUri}
-            className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-3 rounded-xl transition-colors text-sm">
-            <Smartphone className="w-4 h-4" />
-            Pay ₹{fmt(payableNow)} via UPI App
+          <a href={upiUri} className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-3 rounded-xl text-sm">
+            <Smartphone className="w-4 h-4" /> Pay ₹{fmt(payableNow)} via UPI App
           </a>
         ) : (
-          <p className="text-gray-400 dark:text-zinc-500 text-xs text-center">
-            On mobile, click "Pay via UPI App" to open PhonePe / GPay directly.
-          </p>
+          <p className="text-gray-400 text-xs text-center">On mobile, tap "Pay via UPI App" to open PhonePe / GPay directly.</p>
         )}
       </div>
 
-      {/* UTR Input */}
+      {/* UTR */}
       <div className="space-y-2">
         <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">
           UPI Transaction Reference (UTR) *
         </label>
-        <input
-          type="text"
-          value={utrNumber}
-          onChange={e => setUtrNumber(e.target.value.trim())}
+        <input type="text" value={utrNumber} onChange={e => setUtrNumber(e.target.value.trim())}
           placeholder="e.g. 426813598234"
-          className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 placeholder-gray-400 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent transition-colors font-mono"
-        />
-        <p className="text-gray-400 dark:text-zinc-500 text-xs">
-          After paying, enter the 12-digit UTR / transaction ID from your UPI app.
-        </p>
+          className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 placeholder-gray-400 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent font-mono" />
+        <p className="text-gray-400 text-xs">Enter the 12-digit UTR / transaction ID from your UPI app after paying.</p>
       </div>
 
-      {/* Confirm button */}
       <button onClick={onConfirm} disabled={confirming || !utrNumber.trim()}
         className="w-full flex items-center justify-center gap-2.5 bg-accent hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-6 py-3.5 rounded-xl transition-colors text-sm">
         {confirming ? <><Loader className="animate-spin w-4 h-4" /> Confirming…</> : <><PackageCheck className="w-4 h-4" /> Confirm Order</>}
       </button>
-      <p className="text-gray-400 dark:text-zinc-500 text-xs text-center">
-        Your order will be verified within 2 hours of payment confirmation.
-      </p>
+      <p className="text-gray-400 text-xs text-center">Your order will be verified within 2 hours of payment confirmation.</p>
     </div>
   );
 };
@@ -399,18 +541,16 @@ const CheckoutPanel = ({
   items, addresses, shippingId, billingId,
   onShippingSelect, onBillingSelect,
   couponData, onCouponApply, onCouponRemove, availableCoupons,
-  // UPI
   paymentPlan, setPaymentPlan, utrNumber, setUtrNumber,
   onUpiConfirm, upiConfirming,
-  // Razorpay
   onRazorpayCheckout, razorpayChecking,
 }) => {
-  const [activeMethod, setActiveMethod] = useState('upi'); // 'upi' | 'razorpay'
+  const [activeMethod, setActiveMethod] = useState('upi');
 
-  const subtotal   = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
-  const couponDisc = couponData ? parseFloat(couponData.discount_amount) : 0;
-  const grandTotal = subtotal - couponDisc;
-  const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
+  const subtotal  = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
+  const couponPct = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
+  const upiDiscPct = activeMethod === 'upi' && paymentPlan === 'full' ? 0.01 : 0;
+  const { grandTotal } = calcGST(subtotal, couponPct, upiDiscPct);
 
   return (
     <div className="flex flex-col xl:flex-row gap-8 items-start">
@@ -432,15 +572,14 @@ const CheckoutPanel = ({
             : <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{addresses.map(a => <AddressCard key={a.id} addr={a} type="billing" selected={billingId === a.id} onSelect={onBillingSelect} />)}</div>}
         </div>
 
-        {/* Payment Method Toggle */}
+        {/* Payment */}
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5"><ShieldCheck className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Payment Method</h2></div>
 
-          {/* Method selector tabs */}
           <div className="flex gap-3 mb-6">
             {[
-              { key: 'upi',      label: 'Direct UPI',  sub: 'Zero fees · Instant' },
-              { key: 'razorpay', label: 'Razorpay',    sub: 'Card / UPI / NetBanking' },
+              { key: 'upi',      label: 'Direct UPI',  sub: 'Zero fees · Instant'       },
+              { key: 'razorpay', label: 'Razorpay',    sub: 'Card / UPI / NetBanking'   },
             ].map(m => (
               <button key={m.key} onClick={() => setActiveMethod(m.key)}
                 className={`flex-1 rounded-xl border p-3 text-left transition-all ${activeMethod === m.key ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-800 hover:border-gray-300'}`}>
@@ -450,27 +589,22 @@ const CheckoutPanel = ({
             ))}
           </div>
 
-          {/* Direct UPI flow */}
           {activeMethod === 'upi' && (
             <DirectUPIPanel
-              grandTotal={grandTotal}
-              paymentPlan={paymentPlan}
-              setPaymentPlan={setPaymentPlan}
-              utrNumber={utrNumber}
-              setUtrNumber={setUtrNumber}
-              onConfirm={onUpiConfirm}
-              confirming={upiConfirming}
+              subtotal={subtotal} couponPct={couponPct}
+              paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan}
+              utrNumber={utrNumber} setUtrNumber={setUtrNumber}
+              onConfirm={onUpiConfirm} confirming={upiConfirming}
             />
           )}
 
-          {/* Razorpay flow */}
           {activeMethod === 'razorpay' && (
             <div className="space-y-4">
               <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-xl px-4 py-3 text-blue-700 dark:text-blue-400 text-sm">
                 You'll be redirected to Razorpay's secure payment page. Supports UPI, Cards, and NetBanking.
               </div>
               <button onClick={onRazorpayCheckout} disabled={razorpayChecking}
-                className="w-full flex items-center justify-center gap-2.5 bg-[#2d63f5] hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-6 py-3.5 rounded-xl transition-colors text-sm">
+                className="w-full flex items-center justify-center gap-2.5 bg-[#2d63f5] hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-6 py-3.5 rounded-xl text-sm">
                 {razorpayChecking ? <><Loader className="animate-spin w-4 h-4" /> Opening…</> : <><CreditCard className="w-4 h-4" /> Pay ₹{fmt(grandTotal)} via Razorpay</>}
               </button>
             </div>
@@ -478,32 +612,16 @@ const CheckoutPanel = ({
         </div>
       </div>
 
-      {/* Order Summary */}
+      {/* Order Summary sidebar */}
       <div className="w-full xl:w-80 shrink-0">
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 space-y-5 sticky top-6 shadow-sm">
-          <div className="flex items-center gap-2 pb-4 border-b border-gray-100 dark:border-white/5">
-            <ReceiptText className="w-5 h-5 text-accent" />
-            <h2 className="text-gray-900 dark:text-zinc-100 font-bold text-lg">Order Summary</h2>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>SKU Lines</span><span className="text-gray-900 dark:text-zinc-100 font-semibold">{items.length}</span></div>
-            <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>Total Units</span><span className="text-gray-900 dark:text-zinc-100 font-semibold">{totalUnits}</span></div>
-            <div className="flex justify-between text-gray-500 dark:text-zinc-400 pt-2 border-t border-gray-100 dark:border-white/5"><span>Subtotal</span><span className="text-gray-900 dark:text-zinc-100 font-semibold">₹{fmt(subtotal)}</span></div>
-            {couponData && couponDisc > 0 && (
-              <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-                <span>Coupon ({couponData.coupon_code})</span><span>−₹{fmt(couponDisc)}</span>
-              </div>
-            )}
-          </div>
-
-          <AvailableOffers coupons={availableCoupons} cartTotal={subtotal}
-            appliedCoupon={couponData} onApply={onCouponApply} onRemove={onCouponRemove} />
-
-          <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-xl px-4 py-3">
-            <span className="text-accent font-bold text-sm uppercase tracking-widest">Grand Total</span>
-            <span className="text-gray-900 dark:text-zinc-100 font-extrabold text-xl">₹{fmt(grandTotal)}</span>
-          </div>
-        </div>
+        <OrderSummaryCard
+          items={items}
+          couponData={couponData}
+          upiDiscPct={upiDiscPct}
+          availableCoupons={availableCoupons}
+          onCouponApply={onCouponApply}
+          onCouponRemove={onCouponRemove}
+        />
       </div>
     </div>
   );
@@ -523,13 +641,9 @@ const Cart = () => {
   const [couponData, setCouponData]             = useState(null);
   const [success, setSuccess]                   = useState(false);
   const [successMsg, setSuccessMsg]             = useState('');
-
-  // UPI state
-  const [paymentPlan, setPaymentPlan]     = useState('full');
-  const [utrNumber, setUtrNumber]         = useState('');
-  const [upiConfirming, setUpiConfirming] = useState(false);
-
-  // Razorpay state
+  const [paymentPlan, setPaymentPlan]           = useState('full');
+  const [utrNumber, setUtrNumber]               = useState('');
+  const [upiConfirming, setUpiConfirming]       = useState(false);
   const [razorpayChecking, setRazorpayChecking] = useState(false);
 
   const showToast  = useCallback((message, type = 'success') => setToast({ message, type }), []);
@@ -566,12 +680,10 @@ const Cart = () => {
     setCouponData(null);
   }, [scheduleUpdate]);
 
-  // ── Direct UPI checkout ───────────────────────────────────────────────────
   const handleUpiConfirm = async () => {
     if (!shippingId) { showToast('Please select a shipping address.', 'error'); return; }
     if (!billingId)  { showToast('Please select a billing address.', 'error'); return; }
     if (!utrNumber.trim()) { showToast('Please enter your UPI Transaction Reference ID.', 'error'); return; }
-
     setUpiConfirming(true);
     try {
       const res = await api.post('orders/upi/checkout/', {
@@ -581,32 +693,21 @@ const Cart = () => {
         utr_number:          utrNumber.trim(),
         coupon_code:         couponData?.coupon_code || '',
       });
-      setItems([]);
-      setCouponData(null);
-      setUtrNumber('');
+      setItems([]); setCouponData(null); setUtrNumber('');
       setSuccess(true);
       setSuccessMsg(`Order #${res.data.order_id} placed! We'll verify your payment within 2 hours.`);
       setTimeout(() => navigate('/history'), 3500);
     } catch (err) {
       showToast(err.response?.data?.error || 'Order failed. Please try again.', 'error');
-    } finally {
-      setUpiConfirming(false);
-    }
+    } finally { setUpiConfirming(false); }
   };
 
-  // ── Razorpay checkout ─────────────────────────────────────────────────────
   const handleRazorpayCheckout = async () => {
     if (!shippingId) { showToast('Please select a shipping address.', 'error'); return; }
     if (!billingId)  { showToast('Please select a billing address.', 'error'); return; }
-
     setRazorpayChecking(true);
     const scriptLoaded = await loadRazorpayScript();
-    if (!scriptLoaded) {
-      showToast('Failed to load payment gateway. Check your connection.', 'error');
-      setRazorpayChecking(false);
-      return;
-    }
-
+    if (!scriptLoaded) { showToast('Failed to load payment gateway.', 'error'); setRazorpayChecking(false); return; }
     let orderData;
     try {
       const res = await api.post('orders/razorpay/create/', {
@@ -615,21 +716,14 @@ const Cart = () => {
         coupon_code:         couponData?.coupon_code || '',
       });
       orderData = res.data;
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Failed to initiate payment.', 'error');
-      setRazorpayChecking(false);
-      return;
-    }
+    } catch (err) { showToast(err.response?.data?.error || 'Failed to initiate payment.', 'error'); setRazorpayChecking(false); return; }
 
     const options = {
-      key:         orderData.key_id,
-      amount:      orderData.amount,
-      currency:    orderData.currency,
-      name:        'Pronoun Jeans',
-      description: 'B2B Wholesale Order',
-      order_id:    orderData.razorpay_order_id,
-      prefill:     { name: orderData.name, email: orderData.email, contact: orderData.contact },
-      theme:       { color: '#dc2626' },
+      key: orderData.key_id, amount: orderData.amount, currency: orderData.currency,
+      name: 'Pronoun Jeans', description: 'B2B Wholesale Order',
+      order_id: orderData.razorpay_order_id,
+      prefill: { name: orderData.name, email: orderData.email, contact: orderData.contact },
+      theme: { color: '#dc2626' },
       handler: async (response) => {
         try {
           await api.post('orders/razorpay/verify/', {
@@ -637,39 +731,18 @@ const Cart = () => {
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_signature:  response.razorpay_signature,
           });
-          setItems([]);
-          setCouponData(null);
-          setSuccess(true);
-          setSuccessMsg('Payment successful! Order confirmed.');
+          setItems([]); setCouponData(null);
+          setSuccess(true); setSuccessMsg('Payment successful! Order confirmed.');
           setTimeout(() => navigate('/history'), 2400);
-        } catch (err) {
-          showToast(err.response?.data?.error || 'Verification failed. Contact support.', 'error');
-        } finally {
-          setRazorpayChecking(false);
-        }
+        } catch (err) { showToast(err.response?.data?.error || 'Verification failed.', 'error'); }
+        finally { setRazorpayChecking(false); }
       },
       modal: { ondismiss: () => { showToast('Payment cancelled.', 'error'); setRazorpayChecking(false); } },
     };
-
     const rzp = new window.Razorpay(options);
     rzp.on('payment.failed', () => { showToast('Payment failed.', 'error'); setRazorpayChecking(false); });
     rzp.open();
   };
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  const Spinner = () => <div className="flex items-center justify-center py-28"><Loader className="animate-spin text-accent w-9 h-9" /></div>;
-  const EmptyCart = () => (
-    <div className="flex flex-col items-center justify-center py-28 gap-4">
-      <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center">
-        <ShoppingCart className="w-9 h-9 text-gray-400 dark:text-zinc-600" />
-      </div>
-      <p className="text-gray-900 dark:text-zinc-100 text-xl font-bold">Your cart is empty</p>
-      <button onClick={() => navigate('/catalog')} className="mt-2 bg-accent hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-colors">
-        Browse Catalog
-      </button>
-    </div>
-  );
 
   return (
     <div className="bg-gray-50 dark:bg-zinc-950 min-h-screen p-6 lg:p-12">
@@ -684,20 +757,32 @@ const Cart = () => {
           )}
         </div>
 
-        {/* Success screen */}
         {success && (
           <div className="flex flex-col items-center justify-center py-28 gap-5">
-            <div className="w-20 h-20 rounded-full bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 flex items-center justify-center">
-              <PackageCheck className="w-9 h-9 text-green-600 dark:text-green-400" />
+            <div className="w-20 h-20 rounded-full bg-green-50 dark:bg-green-500/10 border border-green-200 flex items-center justify-center">
+              <PackageCheck className="w-9 h-9 text-green-600" />
             </div>
             <p className="text-gray-900 dark:text-zinc-100 text-2xl font-bold text-center">{successMsg}</p>
-            <p className="text-gray-500 dark:text-zinc-400 text-sm">Redirecting to your orders…</p>
+            <p className="text-gray-500 text-sm">Redirecting to your orders…</p>
             <Loader className="animate-spin text-accent w-5 h-5 mt-1" />
           </div>
         )}
 
-        {!success && loading  && <Spinner />}
-        {!success && !loading && items.length === 0 && <EmptyCart />}
+        {!success && loading && (
+          <div className="flex items-center justify-center py-28">
+            <Loader className="animate-spin text-accent w-9 h-9" />
+          </div>
+        )}
+
+        {!success && !loading && items.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-28 gap-4">
+            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center">
+              <ShoppingCart className="w-9 h-9 text-gray-400" />
+            </div>
+            <p className="text-gray-900 dark:text-zinc-100 text-xl font-bold">Your cart is empty</p>
+            <button onClick={() => navigate('/catalog')} className="mt-2 bg-accent hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm">Browse Catalog</button>
+          </div>
+        )}
 
         {!success && !loading && items.length > 0 && (
           <div className="space-y-8">
@@ -734,9 +819,7 @@ const Cart = () => {
                 <div key={item.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-4 shadow-sm">
                   <div className="flex justify-between items-start mb-1">
                     <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">{item.variation?.product_name}</p>
-                    <button onClick={() => handleQtyChange(item.id, 0)} className="text-gray-400 hover:text-red-500">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <button onClick={() => handleQtyChange(item.id, 0)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                   </div>
                   <p className="text-gray-400 text-xs font-mono mb-1">{item.variation?.sku}</p>
                   <div className="flex items-center gap-2 mb-3 text-xs text-gray-500">

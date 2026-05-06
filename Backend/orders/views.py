@@ -19,12 +19,56 @@ from .serializers import (
     SampleOrderSerializer, OrderTrackingUpdateSerializer, CouponSerializer,
 )
 
+# ── GST helpers ───────────────────────────────────────────────────────────────
+#
+# All b2b_price values are GST-inclusive (5% baked in).
+#
+# Math:
+#   base       = subtotal * 0.95          GST-exclusive portion
+#   gst        = subtotal * 0.05          GST — never discounted
+#   discount   = base * coupon_pct        coupon only on base
+#   upi_disc   = base * upi_pct           extra 1% only on base (full UPI plan)
+#   disc_base  = base - discount - upi_disc
+#   grand_total = disc_base + gst
+#
+# coupon_pct and upi_pct are Decimal fractions (e.g. Decimal('0.02'))
+
+Q = Decimal('0.01')   # quantize target — 2dp
+
+def _r(value):
+    """Round Decimal to 2dp using ROUND_HALF_UP."""
+    return value.quantize(Q, rounding=ROUND_HALF_UP)
+
+def calc_gst_split(subtotal, coupon_pct=Decimal('0'), upi_pct=Decimal('0')):
+    """
+    Returns a dict with all intermediate values.
+    subtotal   — Decimal, sum of inclusive prices × quantities
+    coupon_pct — Decimal fraction e.g. Decimal('0.02') for 2%
+    upi_pct    — Decimal fraction e.g. Decimal('0.01') for full UPI 1%
+    """
+    base       = _r(subtotal * Decimal('0.95'))
+    gst        = _r(subtotal * Decimal('0.05'))
+    coupon_disc = _r(base * coupon_pct)
+    upi_disc    = _r(base * upi_pct)
+    total_disc  = _r(coupon_disc + upi_disc)
+    disc_base   = _r(base - total_disc)
+    grand_total = _r(disc_base + gst)
+    return {
+        'base':        base,
+        'gst':         gst,
+        'coupon_disc': coupon_disc,
+        'upi_disc':    upi_disc,
+        'total_disc':  total_disc,
+        'disc_base':   disc_base,
+        'grand_total': grand_total,
+    }
+
 
 def get_razorpay_client():
     return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Shared helpers ────────────────────────────────────────────────────────────
 
 def _resolve_address(address_id, user):
     if not address_id:
@@ -35,27 +79,34 @@ def _resolve_address(address_id, user):
         return None
 
 
-def _compute_cart_total(cart_items):
+def _compute_subtotal(cart_items):
+    """Sum of inclusive prices × quantities as Decimal."""
     return sum(
         Decimal(str(item.quantity)) * item.variation.b2b_price
         for item in cart_items
     )
 
 
-def _apply_coupon(coupon_code, total_amount):
-    """Returns (coupon_obj_or_None, discount_amount)."""
+def _resolve_coupon(coupon_code, subtotal):
+    """
+    Returns (coupon_obj_or_None, coupon_pct as Decimal).
+    coupon_pct is a fraction e.g. Decimal('0.02') for 2%.
+    Only percentage coupons are supported.
+    """
     if not coupon_code:
-        return None, Decimal('0.00')
+        return None, Decimal('0')
     try:
         coupon = Coupon.objects.get(code=coupon_code.strip().upper())
         now    = timezone.now()
         if (coupon.is_active
                 and coupon.valid_from <= now <= coupon.valid_to
-                and total_amount >= coupon.min_order_value):
-            return coupon, coupon.calculate_discount(total_amount)
+                and subtotal >= coupon.min_order_value
+                and coupon.discount_type == Coupon.DiscountType.PERCENTAGE):
+            pct = Decimal(str(coupon.discount_value)) / Decimal('100')
+            return coupon, pct
     except Coupon.DoesNotExist:
         pass
-    return None, Decimal('0.00')
+    return None, Decimal('0')
 
 
 # ── Cart ──────────────────────────────────────────────────────────────────────
@@ -77,7 +128,7 @@ class CartItemUpdateView(APIView):
         items      = request.data.get('items', [])
 
         if not product_id or not items:
-            return Response({'error': 'product_id and items array are required.'},
+            return Response({'error': 'product_id and items are required.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
         total_quantity = sum(int(i.get('quantity', 0)) for i in items if int(i.get('quantity', 0)) > 0)
@@ -90,8 +141,10 @@ class CartItemUpdateView(APIView):
             return Response({'error': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         if total_quantity < product.moq:
-            return Response({'error': f'Total quantity ({total_quantity}) must be >= MOQ ({product.moq}).'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': f'Total quantity ({total_quantity}) must be >= MOQ ({product.moq}).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         cart, _ = Cart.objects.get_or_create(user=request.user)
         for item in items:
@@ -168,27 +221,30 @@ class ApplyCouponView(APIView):
         except Cart.DoesNotExist:
             return Response({'error': 'Your cart is empty.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        items = cart.items.all()
-        if not items.exists():
+        cart_items = cart.items.all()
+        if not cart_items.exists():
             return Response({'error': 'Your cart is empty.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        cart_total      = _compute_cart_total(items)
-        if cart_total < coupon.min_order_value:
+        subtotal = _compute_subtotal(cart_items)
+
+        if subtotal < coupon.min_order_value:
             return Response(
                 {'error': f'Minimum order value for this coupon is ₹{coupon.min_order_value}.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        discount_amount = coupon.calculate_discount(cart_total)
-        grand_total     = cart_total - discount_amount
+        coupon_pct  = Decimal(str(coupon.discount_value)) / Decimal('100')
+        calc        = calc_gst_split(subtotal, coupon_pct=coupon_pct)
 
         return Response({
-            'coupon_code':     coupon.code,
-            'discount_type':   coupon.discount_type,
-            'discount_value':  str(coupon.discount_value),
-            'discount_amount': str(discount_amount),
-            'subtotal':        str(cart_total),
-            'grand_total':     str(grand_total),
+            'coupon_code':       coupon.code,
+            'discount_type':     coupon.discount_type,
+            'discount_value':    str(coupon.discount_value),
+            'coupon_disc_amount': str(calc['coupon_disc']),
+            'subtotal':          str(subtotal),
+            'base':              str(calc['base']),
+            'gst':               str(calc['gst']),
+            'grand_total':       str(calc['grand_total']),
         })
 
 
@@ -197,15 +253,7 @@ class ApplyCouponView(APIView):
 class DirectUPICheckoutView(APIView):
     """
     POST /api/orders/upi/checkout/
-
-    Payload:
-        shipping_address_id  int
-        billing_address_id   int
-        payment_plan         'advance' | 'full'
-        utr_number           str   (buyer's UPI transaction reference)
-        coupon_code          str   (optional)
-
-    Backend recalculates everything — never trusts frontend amounts.
+    Backend recalculates all math — never trusts frontend amounts.
     """
     permission_classes = [IsAuthenticated]
 
@@ -217,28 +265,20 @@ class DirectUPICheckoutView(APIView):
         billing_address_id  = request.data.get('billing_address_id')
         coupon_code         = request.data.get('coupon_code', '')
 
-        # ── Validate payment_plan ──
         if payment_plan not in ('advance', 'full'):
             return Response({'error': "payment_plan must be 'advance' or 'full'."},
                             status=status.HTTP_400_BAD_REQUEST)
-
-        # ── Validate UTR ──
         if not utr_number:
             return Response({'error': 'Please enter your UPI Transaction Reference ID (UTR).'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # ── Resolve addresses ──
         shipping_address = _resolve_address(shipping_address_id, request.user)
         billing_address  = _resolve_address(billing_address_id,  request.user)
-
         if not shipping_address:
-            return Response({'error': 'Please select a shipping address.'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Please select a shipping address.'}, status=status.HTTP_400_BAD_REQUEST)
         if not billing_address:
-            return Response({'error': 'Please select a billing address.'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Please select a billing address.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ── Validate cart ──
         try:
             cart = Cart.objects.prefetch_related('items__variation__product').get(user=request.user)
         except Cart.DoesNotExist:
@@ -248,32 +288,24 @@ class DirectUPICheckoutView(APIView):
         if not cart_items.exists():
             return Response({'error': 'Cart is empty.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ── Compute totals (all Decimal, no float) ──
-        total_amount    = _compute_cart_total(cart_items)
-        coupon, coupon_discount = _apply_coupon(coupon_code, total_amount)
+        # ── Compute all amounts server-side ──
+        subtotal             = _compute_subtotal(cart_items)
+        coupon, coupon_pct   = _resolve_coupon(coupon_code, subtotal)
+        upi_pct              = Decimal('0.01') if payment_plan == 'full' else Decimal('0')
 
-        # Subtotal after coupon
-        subtotal = (total_amount - coupon_discount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        calc = calc_gst_split(subtotal, coupon_pct=coupon_pct, upi_pct=upi_pct)
+        grand_total = calc['grand_total']
 
-        # Extra 1% discount for full payment
-        if payment_plan == 'full':
-            upi_discount = (subtotal * Decimal('0.01')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        else:
-            upi_discount = Decimal('0.00')
-
-        grand_total = (subtotal - upi_discount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
-        # Amount paid now & balance due
         if payment_plan == 'advance':
-            amount_paid = (grand_total * Decimal('0.10')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            balance_due = (grand_total - amount_paid).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            amount_paid = _r(grand_total * Decimal('0.10'))
+            balance_due = _r(grand_total - amount_paid)
             payment_status_val = Order.PaymentStatus.PARTIAL
-        else:  # full
+        else:
             amount_paid = grand_total
             balance_due = Decimal('0.00')
-            payment_status_val = Order.PaymentStatus.PENDING  # pending until admin verifies
+            payment_status_val = Order.PaymentStatus.PENDING
 
-        # ── Create Order ──
+        # ── Save order ──
         order = Order.objects.create(
             user             = request.user,
             shipping_address = shipping_address,
@@ -281,11 +313,11 @@ class DirectUPICheckoutView(APIView):
             payment_method   = Order.PaymentMethod.DIRECT_UPI,
             payment_status   = payment_status_val,
             status           = Order.Status.PENDING_VERIFICATION,
-            total_amount     = total_amount,
+            total_amount     = subtotal,           # inclusive subtotal stored
             coupon           = coupon,
-            discount_amount  = coupon_discount,
+            discount_amount  = calc['coupon_disc'],
             payment_plan     = payment_plan,
-            upi_discount     = upi_discount,
+            upi_discount     = calc['upi_disc'],
             amount_paid      = amount_paid,
             balance_due      = balance_due,
             utr_number       = utr_number,
@@ -293,16 +325,11 @@ class DirectUPICheckoutView(APIView):
         )
 
         OrderItem.objects.bulk_create([
-            OrderItem(
-                order     = order,
-                variation = item.variation,
-                quantity  = item.quantity,
-                price     = item.variation.b2b_price,
-            )
+            OrderItem(order=order, variation=item.variation,
+                      quantity=item.quantity, price=item.variation.b2b_price)
             for item in cart_items
         ])
 
-        # Clear cart
         cart.items.all().delete()
 
         return Response({
@@ -310,7 +337,7 @@ class DirectUPICheckoutView(APIView):
             'grand_total': str(grand_total),
             'amount_paid': str(amount_paid),
             'balance_due': str(balance_due),
-            'upi_discount': str(upi_discount),
+            'gst':         str(calc['gst']),
             'message':     'Order placed. Pending payment verification.',
         }, status=status.HTTP_201_CREATED)
 
@@ -328,7 +355,6 @@ class RazorpayCreateOrderView(APIView):
 
         shipping_address = _resolve_address(shipping_address_id, request.user)
         billing_address  = _resolve_address(billing_address_id,  request.user)
-
         if not shipping_address:
             return Response({'error': 'Shipping address not found.'}, status=status.HTTP_400_BAD_REQUEST)
         if not billing_address:
@@ -343,9 +369,10 @@ class RazorpayCreateOrderView(APIView):
         if not cart_items.exists():
             return Response({'error': 'Cart is empty.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        total_amount            = _compute_cart_total(cart_items)
-        coupon, discount_amount = _apply_coupon(coupon_code, total_amount)
-        grand_total             = (total_amount - discount_amount).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        subtotal           = _compute_subtotal(cart_items)
+        coupon, coupon_pct = _resolve_coupon(coupon_code, subtotal)
+        calc               = calc_gst_split(subtotal, coupon_pct=coupon_pct)
+        grand_total        = calc['grand_total']
 
         try:
             client         = get_razorpay_client()
@@ -364,9 +391,9 @@ class RazorpayCreateOrderView(APIView):
             billing_address   = billing_address,
             payment_method    = Order.PaymentMethod.RAZORPAY,
             payment_status    = Order.PaymentStatus.PENDING,
-            total_amount      = total_amount,
+            total_amount      = subtotal,
             coupon            = coupon,
-            discount_amount   = discount_amount,
+            discount_amount   = calc['coupon_disc'],
             status            = Order.Status.PENDING,
             razorpay_order_id = razorpay_order['id'],
         )
@@ -399,7 +426,7 @@ class RazorpayVerifyPaymentView(APIView):
         razorpay_signature  = request.data.get('razorpay_signature', '')
 
         if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
-            return Response({'error': 'razorpay_order_id, razorpay_payment_id, and razorpay_signature are required.'},
+            return Response({'error': 'All three Razorpay fields are required.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -413,8 +440,7 @@ class RazorpayVerifyPaymentView(APIView):
             return Response({'error': 'Payment signature verification failed.'},
                             status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({'error': f'Verification error: {str(e)}'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Verification error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             order = Order.objects.get(razorpay_order_id=razorpay_order_id, user=request.user)
@@ -435,15 +461,14 @@ class RazorpayVerifyPaymentView(APIView):
         return Response({'message': 'Payment verified.', 'order_id': order.id})
 
 
-# ── Checkout (kept for any future non-Razorpay/non-UPI use) ──────────────────
+# ── Standard checkout (disabled) ──────────────────────────────────────────────
 
 class CheckoutView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
     def post(self, request):
         return Response(
-            {'error': 'Use /api/orders/upi/checkout/ for Direct UPI or /api/orders/razorpay/create/ for Razorpay.'},
+            {'error': 'Use /api/orders/upi/checkout/ or /api/orders/razorpay/create/'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -460,7 +485,7 @@ class OrderHistoryView(APIView):
         return Response(OrderSerializer(orders, many=True).data)
 
 
-# ── Agent: Commission & Ledger ────────────────────────────────────────────────
+# ── Agent: Commissions & Ledger ───────────────────────────────────────────────
 
 class AgentCommissionsListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
