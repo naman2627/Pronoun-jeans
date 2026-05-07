@@ -12,6 +12,8 @@ import { useCartStore } from '../store/useCartStore';
 
 const UPI_ID        = 'pronoun@kotak';
 const BUSINESS_NAME = 'Pronoun Jeans';
+const SHIPPING_FEE  = 300;
+const FREE_SHIPPING_THRESHOLD = 15000;
 
 const loadRazorpayScript = () =>
   new Promise((resolve) => {
@@ -23,6 +25,13 @@ const loadRazorpayScript = () =>
     document.body.appendChild(s);
   });
 
+// GST Math
+// base      = subtotal * 0.95
+// gst       = subtotal * 0.05
+// discounts applied on base only
+// shipping  = 300 if (discBase + gst) < 15000 else 0
+// grandTotal = discBase + gst + shipping
+
 const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
   const r2         = (n) => Math.round(n * 100) / 100;
   const base       = r2(subtotal * 0.95);
@@ -31,8 +40,10 @@ const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
   const upiDisc    = r2(base * upiDiscPct);
   const totalDisc  = r2(base * (couponPct + upiDiscPct));
   const discBase   = r2(base - totalDisc);
-  const grandTotal = r2(discBase + gst);
-  return { base, gst, couponDisc, upiDisc, totalDisc, discBase, grandTotal };
+  const preShipping = r2(discBase + gst);
+  const shipping   = preShipping < FREE_SHIPPING_THRESHOLD ? SHIPPING_FEE : 0;
+  const grandTotal = r2(preShipping + shipping);
+  return { base, gst, couponDisc, upiDisc, totalDisc, discBase, preShipping, shipping, grandTotal };
 };
 
 const fmt         = (n) => parseFloat(n || 0).toFixed(2);
@@ -267,7 +278,7 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
   const couponPct  = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
   const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
 
-  const { base, gst, couponDisc, upiDisc, totalDisc, discBase, grandTotal } =
+  const { base, gst, couponDisc, upiDisc, totalDisc, discBase, preShipping, shipping, grandTotal } =
     calcGST(subtotal, couponPct, upiDiscPct);
 
   if (couponData && couponData.coupon_disc_amount === undefined) {
@@ -320,6 +331,24 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
           <div className="flex justify-between text-gray-500 dark:text-zinc-400">
             <span>GST @ 5%</span><span>₹{fmt(gst)}</span>
           </div>
+          <div className="flex justify-between text-gray-500 dark:text-zinc-400 border-t border-gray-200 dark:border-white/10 pt-1.5">
+            <span>Pre-shipping Total</span><span>₹{fmt(preShipping)}</span>
+          </div>
+          {shipping > 0 ? (
+            <div className="flex justify-between text-orange-600 dark:text-orange-400 font-semibold">
+              <span className="flex items-center gap-1">
+                <Truck className="w-3.5 h-3.5" /> Shipping
+              </span>
+              <span>+₹{fmt(shipping)}</span>
+            </div>
+          ) : (
+            <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
+              <span className="flex items-center gap-1">
+                <Truck className="w-3.5 h-3.5" /> Shipping
+              </span>
+              <span>FREE</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -336,6 +365,16 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
         <span className="text-gray-900 dark:text-zinc-100 font-extrabold text-xl">₹{fmt(grandTotal)}</span>
       </div>
 
+      {shipping === 0 && (
+        <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">
+          🚚 Free shipping on orders above ₹15,000!
+        </p>
+      )}
+      {shipping > 0 && (
+        <p className="text-orange-600 dark:text-orange-400 text-xs text-center">
+          Add ₹{fmt(FREE_SHIPPING_THRESHOLD - preShipping)} more for free shipping
+        </p>
+      )}
       {totalDisc > 0 && (
         <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">
           You save ₹{fmt(totalDisc)} on this order 🎉
@@ -354,18 +393,20 @@ const DirectUPIPanel = ({
   const [copied, setCopied] = useState(false);
   const upiDiscPct = paymentPlan === 'full' ? 0.01 : 0;
 
-  const { gst, couponDisc, upiDisc, discBase, grandTotal } =
+  const { gst, couponDisc, upiDisc, discBase, preShipping, shipping, grandTotal } =
     calcGST(subtotal, couponPct, upiDiscPct);
 
+  // For advance: pay 10% of pre-shipping total + full shipping
+  // For full: pay entire grandTotal
   const payableNow = paymentPlan === 'advance'
-    ? Math.round(grandTotal * 0.10 * 100) / 100
+    ? Math.round((preShipping * 0.10 + shipping) * 100) / 100
     : grandTotal;
 
   const balanceDue = paymentPlan === 'advance'
-    ? Math.round((grandTotal - payableNow) * 100) / 100
+    ? Math.round((preShipping - preShipping * 0.10) * 100) / 100
     : 0;
 
-  const upiUri  = buildUpiUri(payableNow, `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
+  const upiUri   = buildUpiUri(payableNow, `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
   const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 
   const handleCopyUpi = () => {
@@ -380,8 +421,8 @@ const DirectUPIPanel = ({
         <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest mb-3">Choose Payment Plan</p>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { value: 'advance', label: '10% Advance', sub: 'Pay 10% now, rest on delivery' },
-            { value: 'full',    label: 'Full Payment', sub: 'Extra 1% off on base price'   },
+            { value: 'advance', label: '10% Advance', sub: 'Pay 10% + shipping now, rest on delivery' },
+            { value: 'full',    label: 'Full Payment', sub: 'Extra 1% off on base price'              },
           ].map(opt => (
             <label key={opt.value} onClick={() => setPaymentPlan(opt.value)}
               className={`cursor-pointer rounded-xl border p-3.5 transition-all ${paymentPlan === opt.value ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300'}`}>
@@ -414,6 +455,18 @@ const DirectUPIPanel = ({
         <div className="flex justify-between text-gray-500 dark:text-zinc-400">
           <span>GST (5%)</span><span>₹{fmt(gst)}</span>
         </div>
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+          <span>Pre-shipping Total</span><span>₹{fmt(preShipping)}</span>
+        </div>
+        {shipping > 0 ? (
+          <div className="flex justify-between text-orange-600 font-semibold">
+            <span>Shipping</span><span>+₹{fmt(shipping)}</span>
+          </div>
+        ) : (
+          <div className="flex justify-between text-green-600 font-semibold">
+            <span>Shipping</span><span>FREE</span>
+          </div>
+        )}
         <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2">
           <span className="font-semibold">Order Total</span>
           <span className="font-bold">₹{fmt(grandTotal)}</span>
