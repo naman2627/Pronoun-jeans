@@ -3,9 +3,8 @@ import { Loader, PackageSearch, MapPin, ExternalLink } from 'lucide-react';
 import api from '../api/axios';
 import TrackingTimelineModal from '../components/shared/TrackingTimelineModal';
 
-// ── Status pill ───────────────────────────────────────────────────────────────
-
 const STATUS_STYLES = {
+  PENDING_VERIFICATION: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
   PENDING:   'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400',
   APPROVED:  'bg-blue-500/15   text-blue-600   dark:text-blue-400',
   SHIPPED:   'bg-purple-500/15 text-purple-600  dark:text-purple-400',
@@ -15,24 +14,24 @@ const STATUS_STYLES = {
 
 const StatusPill = ({ status }) => (
   <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${STATUS_STYLES[status] || STATUS_STYLES.PENDING}`}>
-    {status}
+    {status?.replace(/_/g, ' ')}
   </span>
 );
 
-// ── Order card ────────────────────────────────────────────────────────────────
-
 const OrderCard = ({ order, onTrack }) => {
-  const isShipped    = order.status?.toUpperCase() === 'SHIPPED';
-  const hasTracking  = !!order.tracking_number;
-  const showTrackBtn = isShipped && hasTracking;
+  const statusUpper = order.status?.toUpperCase();
 
-  const grandTotal = order.grand_total ?? order.total_amount;
+  // Bug fix: show Track button for both SHIPPED and DELIVERED orders
+  const canTrack     = ['SHIPPED', 'DELIVERED'].includes(statusUpper);
+  const hasTracking  = !!order.tracking_number;
+  const showTrackBtn = canTrack && hasTracking;
+
+  const grandTotal  = order.grand_total ?? order.total_amount;
   const hasDiscount = order.discount_amount && parseFloat(order.discount_amount) > 0;
 
   return (
     <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden">
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-gray-100 dark:border-white/5">
         <div>
           <p className="text-gray-400 dark:text-zinc-500 text-xs font-semibold uppercase tracking-widest">
@@ -48,7 +47,6 @@ const OrderCard = ({ order, onTrack }) => {
         <div className="flex items-center gap-3 flex-wrap">
           <StatusPill status={order.status} />
 
-          {/* Pricing */}
           <div className="text-right">
             {hasDiscount && (
               <p className="text-gray-400 dark:text-zinc-500 text-xs line-through">
@@ -66,7 +64,6 @@ const OrderCard = ({ order, onTrack }) => {
             )}
           </div>
 
-          {/* Track button — only when SHIPPED + tracking number exists */}
           {showTrackBtn && (
             <button
               onClick={() => onTrack(order)}
@@ -79,7 +76,6 @@ const OrderCard = ({ order, onTrack }) => {
         </div>
       </div>
 
-      {/* Tracking info bar — shown when tracking exists */}
       {hasTracking && (
         <div className="px-6 py-2.5 bg-purple-50/50 dark:bg-purple-500/5 border-b border-purple-100 dark:border-purple-500/10 flex items-center gap-3 flex-wrap">
           {order.courier_name && (
@@ -95,7 +91,6 @@ const OrderCard = ({ order, onTrack }) => {
         </div>
       )}
 
-      {/* Items grid */}
       <div className="px-6 py-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {order.items.map(item => (
@@ -117,7 +112,6 @@ const OrderCard = ({ order, onTrack }) => {
         </div>
       </div>
 
-      {/* Footer */}
       <div className="px-6 py-3 border-t border-gray-100 dark:border-white/5 flex items-center justify-between gap-2 flex-wrap">
         <p className="text-gray-400 dark:text-zinc-500 text-xs">
           {order.items.reduce((s, i) => s + i.quantity, 0)} units
@@ -133,11 +127,9 @@ const OrderCard = ({ order, onTrack }) => {
   );
 };
 
-// ── Main component ────────────────────────────────────────────────────────────
-
 const OrderHistory = () => {
-  const [orders, setOrders]           = useState([]);
-  const [loading, setLoading]         = useState(true);
+  const [orders, setOrders]               = useState([]);
+  const [loading, setLoading]             = useState(true);
   const [trackingOrder, setTrackingOrder] = useState(null);
 
   useEffect(() => {
@@ -179,7 +171,6 @@ const OrderHistory = () => {
         )}
       </div>
 
-      {/* Tracking timeline modal */}
       <TrackingTimelineModal
         order={trackingOrder}
         isOpen={!!trackingOrder}

@@ -1,15 +1,18 @@
 from decimal import Decimal
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .models import Order, Commission
+from django.db.models import Sum
 
 
-@receiver(post_save, sender=Order)
+@receiver(post_save, sender='orders.Order')
 def create_commission_on_delivered(sender, instance, created, **kwargs):
     """
-    Feature 2: Commission is ONLY created/updated when an order reaches DELIVERED status.
+    Commission is ONLY created when an order reaches DELIVERED status.
     Never fires on order creation or any other status change.
     """
+    # Import here to avoid circular imports at module load time
+    from .models import Order, Commission
+
     if instance.status != Order.Status.DELIVERED:
         return
 
@@ -30,7 +33,7 @@ def create_commission_on_delivered(sender, instance, created, **kwargs):
     base_amount = instance.grand_total
     amount      = (Decimal(str(commission_pct)) / Decimal('100')) * base_amount
 
-    Commission.objects.get_or_create(
+    _, created_now = Commission.objects.get_or_create(
         order=instance,
         defaults={
             'agent':                 agent,
@@ -40,34 +43,32 @@ def create_commission_on_delivered(sender, instance, created, **kwargs):
         },
     )
 
-    # Feature 3: check bonus threshold after each delivered commission
-    _check_and_award_bonus(agent, agent_profile)
+    if created_now:
+        _check_and_award_bonus(agent, agent_profile)
 
 
 def _check_and_award_bonus(agent, agent_profile):
     """
-    Award a flat ₹5,000 bonus commission if total delivered sales >= ₹5,00,000
-    and the bonus has not already been awarded.
+    Award a flat ₹5,000 bonus if total delivered sales >= ₹5,00,000
+    and bonus has not already been awarded.
+    Bonus Commission has order=None to distinguish it from regular commissions.
     """
-    from .models import Commission as C
+    from .models import Order, Commission
 
-    BONUS_THRESHOLD = Decimal(str(AgentProfile.BONUS_THRESHOLD))
-    BONUS_AMOUNT    = Decimal(str(AgentProfile.BONUS_AMOUNT))
+    BONUS_THRESHOLD = Decimal('500000.00')
+    BONUS_AMOUNT    = Decimal('5000.00')
 
-    # Import here to avoid circular import
-    from accounts.models import AgentProfile
-
-    # Already awarded?
-    already_awarded = C.objects.filter(
+    # Check if bonus already awarded — identified by order=None + exact amount
+    already_awarded = Commission.objects.filter(
         agent=agent,
-        commission_percentage=Decimal('0.00'),
+        order__isnull=True,
         amount=BONUS_AMOUNT,
     ).exists()
+
     if already_awarded:
         return
 
-    # Sum all delivered sales for this agent
-    from django.db.models import Sum
+    # Sum all delivered sales for this agent's buyers
     total_delivered = (
         Order.objects.filter(
             user__assigned_agent=agent,
@@ -76,10 +77,10 @@ def _check_and_award_bonus(agent, agent_profile):
     )
 
     if total_delivered >= BONUS_THRESHOLD:
-        C.objects.create(
-            agent=agent,
-            order=None,          # bonus is not tied to a specific order
-            commission_percentage=Decimal('0.00'),
-            amount=BONUS_AMOUNT,
-            status=C.Status.PENDING,
+        Commission.objects.create(
+            agent                = agent,
+            order                = None,
+            commission_percentage= Decimal('0.00'),
+            amount               = BONUS_AMOUNT,
+            status               = Commission.Status.PENDING,
         )
