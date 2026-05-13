@@ -4,8 +4,8 @@ import api from '../api/axios';
 export const useCartStore = create((set) => ({
   cartCount:       0,
   cartTotal:       0,
-  eligibleBuyers:  [],   // buyers who granted agent_can_order=true
-  selectedBuyerId: null, // agent's currently selected OOBO buyer
+  eligibleBuyers:  [],
+  selectedBuyerId: null,
 
   fetchCart: async () => {
     try {

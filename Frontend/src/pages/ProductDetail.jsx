@@ -17,8 +17,6 @@ const decodeHtml = (text) =>
     .replace(/&quot;/g, '"')
     .replace(/\\n/g, '\n');
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
-
 const Toast = ({ onDone }) => {
   useEffect(() => {
     const t = setTimeout(onDone, 3000);
@@ -34,8 +32,6 @@ const Toast = ({ onDone }) => {
   );
 };
 
-// ── Color Swatch ──────────────────────────────────────────────────────────────
-
 const ColorSwatch = ({ hex, name }) => (
   <span className="inline-flex items-center gap-1.5">
     <span
@@ -46,8 +42,6 @@ const ColorSwatch = ({ hex, name }) => (
     <span>{name}</span>
   </span>
 );
-
-// ── Amazon-style Image Zoom ───────────────────────────────────────────────────
 
 const ZOOM_SCALE = 2.5;
 
@@ -108,8 +102,7 @@ const ZoomableImage = ({ src, alt }) => {
 
 // ── Table Price Cells ─────────────────────────────────────────────────────────
 
-// Set Price — the total wholesale price for the set
-const SetPriceCell = ({ v }) => (
+const WholesalePriceCell = ({ v }) => (
   <td className="px-4 py-3">
     <p className="text-gray-900 dark:text-zinc-100 font-bold text-sm">
       ₹{parseFloat(v.set_price || v.b2b_price).toFixed(2)}
@@ -117,33 +110,23 @@ const SetPriceCell = ({ v }) => (
   </td>
 );
 
-// Per Piece Price — wholesale price per individual piece
 const PerPiecePriceCell = ({ v }) => {
   const price = v.per_piece_price ? parseFloat(v.per_piece_price) : null;
   if (!price) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-sm">—</td>;
   return (
     <td className="px-4 py-3">
-      <p className="text-gray-700 dark:text-zinc-300 text-sm font-semibold">
-        ₹{price.toFixed(2)}
-      </p>
+      <p className="text-gray-700 dark:text-zinc-300 text-sm font-semibold">₹{price.toFixed(2)}</p>
     </td>
   );
 };
 
-// MRP Per Piece + Margin badge
 const MrpPerPieceCell = ({ v }) => {
   const mrpPc = v.mrp_per_piece ? parseFloat(v.mrp_per_piece) : null;
   const margin = v.margin_percentage;
-
   if (!mrpPc) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-sm">—</td>;
-
   return (
     <td className="px-4 py-3">
-      {/* MRP — no strikethrough */}
-      <p className="text-gray-700 dark:text-zinc-300 text-sm font-semibold">
-        ₹{mrpPc.toFixed(2)}
-      </p>
-      {/* Margin badge directly below */}
+      <p className="text-gray-700 dark:text-zinc-300 text-sm font-semibold">₹{mrpPc.toFixed(2)}</p>
       {margin > 0 && (
         <span className="inline-flex items-center bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-500/20 text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap mt-1">
           {margin}% margin
@@ -153,7 +136,6 @@ const MrpPerPieceCell = ({ v }) => {
   );
 };
 
-// Line Total
 const TotalCell = ({ v, qty }) => {
   if (!qty || qty === 0) return <td className="px-4 py-3 text-gray-300 dark:text-zinc-700 text-sm">—</td>;
   const setPrice = parseFloat(v.set_price || v.b2b_price);
@@ -263,12 +245,10 @@ const ProductDetail = () => {
 
         <div className="flex flex-col lg:flex-row gap-8 items-start" style={{ overflow: 'visible' }}>
 
-          {/* ── Left panel ─────────────────────────────────────────────── */}
+          {/* Left panel */}
           <div className="w-full lg:w-96 xl:w-[420px] shrink-0" style={{ overflow: 'visible' }}>
-
             <ZoomableImage src={mainImage} alt={product.name} />
 
-            {/* Thumbnails */}
             {product.gallery_images && product.gallery_images.length > 0 && (
               <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
                 {product.image && (
@@ -292,7 +272,6 @@ const ProductDetail = () => {
                 <h1 className="text-gray-900 dark:text-zinc-100 text-lg font-bold leading-snug mt-0.5">{product.name}</h1>
               </div>
 
-              {/* Color swatches */}
               {uniqueColors.length > 0 && (
                 <div>
                   <p className="text-gray-400 dark:text-zinc-500 text-xs uppercase tracking-widest mb-2">
@@ -319,11 +298,10 @@ const ProductDetail = () => {
                 </div>
               )}
 
-              {/* Pricing summary */}
               {isAuthenticated && firstV && (
                 <div className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-white/5 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-400 dark:text-zinc-500 text-xs">Set price</span>
+                    <span className="text-gray-400 dark:text-zinc-500 text-xs">Wholesale price</span>
                     <span className="text-gray-900 dark:text-zinc-100 font-bold text-sm">
                       ₹{parseFloat(firstV.set_price || firstV.b2b_price).toFixed(2)}
                     </span>
@@ -373,7 +351,7 @@ const ProductDetail = () => {
             </div>
           </div>
 
-          {/* ── Right panel ────────────────────────────────────────────── */}
+          {/* Right panel */}
           <div className="flex-1 min-w-0 w-full">
             {isAuthenticated ? (
               <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-sm">
@@ -397,7 +375,7 @@ const ProductDetail = () => {
                       <tr className="text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-widest border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-white/[0.02]">
                         <th className="text-left px-4 py-3">Size / Color</th>
                         <th className="text-left px-4 py-3">SKU</th>
-                        <th className="text-left px-4 py-3">Set Price</th>
+                        <th className="text-left px-4 py-3">Wholesale Price</th>
                         <th className="text-left px-4 py-3">Per Piece</th>
                         <th className="text-left px-4 py-3">MRP / Piece</th>
                         <th className="text-left px-4 py-3 w-24">QTY</th>
@@ -414,8 +392,6 @@ const ProductDetail = () => {
                                 ? 'bg-gray-50/50 dark:bg-white/[0.02]'
                                 : 'bg-white dark:bg-transparent'
                           }`}>
-
-                          {/* Size / Color */}
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <span className="text-gray-700 dark:text-zinc-300 font-semibold text-xs">{v.size}</span>
@@ -423,20 +399,10 @@ const ProductDetail = () => {
                               <ColorSwatch hex={v.color_hex || '#CCCCCC'} name={v.color_name || v.color} />
                             </div>
                           </td>
-
-                          {/* SKU */}
                           <td className="px-4 py-3 text-gray-400 dark:text-zinc-500 font-mono text-xs">{v.sku}</td>
-
-                          {/* Set Price */}
-                          <SetPriceCell v={v} />
-
-                          {/* Per Piece Price */}
+                          <WholesalePriceCell v={v} />
                           <PerPiecePriceCell v={v} />
-
-                          {/* MRP Per Piece + Margin */}
                           <MrpPerPieceCell v={v} />
-
-                          {/* QTY */}
                           <td className="px-4 py-3">
                             <input type="number" min="0"
                               value={quantities[v.id] || ''}
@@ -445,8 +411,6 @@ const ProductDetail = () => {
                               className="w-16 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-accent transition-colors"
                             />
                           </td>
-
-                          {/* Line Total */}
                           <TotalCell v={v} qty={quantities[v.id] || 0} />
                         </tr>
                       ))}
@@ -454,7 +418,6 @@ const ProductDetail = () => {
                   </table>
                 </div>
 
-                {/* Footer */}
                 <div className="px-5 py-4 border-t border-gray-100 dark:border-white/5">
                   {totalSelected > 0 && (
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 p-3 bg-gray-50 dark:bg-zinc-800/50 rounded-xl">
@@ -509,7 +472,7 @@ const ProductDetail = () => {
                 </div>
                 <h3 className="text-gray-900 dark:text-zinc-100 text-lg font-bold mb-2">Wholesale Pricing & Ordering</h3>
                 <p className="text-gray-500 dark:text-zinc-400 text-sm max-w-sm mb-6 leading-relaxed">
-                  Sign in to your partner account to view B2B pricing, MOQ details, and place bulk orders.
+                  Sign in to your partner account to view wholesale pricing, MOQ details, and place bulk orders.
                 </p>
                 <button onClick={() => navigate('/login', { state: { from: { pathname: `/product/${slug}` } } })}
                   className="bg-accent hover:bg-red-700 text-white font-bold px-8 py-3 rounded-xl transition-colors text-sm">

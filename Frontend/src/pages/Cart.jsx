@@ -26,18 +26,65 @@ const loadRazorpayScript = () =>
     document.body.appendChild(s);
   });
 
+// ── GST Math ──────────────────────────────────────────────────────────────────
+//
+// All b2b_prices are GST-inclusive (5% baked in).
+//
+// productTotal  = sum of (price × qty)          — inclusive
+// prepaidDisc   = productTotal × upiDiscPct     — 1% off for full UPI (on inclusive total)
+// taxableAmount = productTotal - prepaidDisc    — base before GST
+// gst           = taxableAmount × 0.05 / 1.05  — extract 5% GST from taxable
+//   OR simpler: taxableAmount * (5/105)
+// discountedBase = taxableAmount - gst          — pure base
+// shipping      = 300 if taxableAmount < 15000 else 0
+// grandTotal    = taxableAmount + shipping      (GST already inside taxableAmount)
+//
+// Wait — the requirement says:
+//   Taxable Amount = Product Total - Discount  (this is the GST-inclusive discounted total)
+//   GST 5%         = 5% of Taxable Amount      (extracted from inclusive price = taxable * 5/105)
+//   Grand Total    = Taxable Amount + Shipping  (GST is already inside taxable)
+//
+// Coupon discounts: applied on the base (95% portion) as before.
+
 const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
-  const r2         = (n) => Math.round(n * 100) / 100;
-  const base       = r2(subtotal * 0.95);
-  const gst        = r2(subtotal * 0.05);
+  const r2 = (n) => Math.round(n * 100) / 100;
+
+  // Product Total = full inclusive subtotal
+  const productTotal = r2(subtotal);
+
+  // Coupon discount — applied on the 95% base portion
+  const base       = r2(productTotal * 0.95);
   const couponDisc = r2(base * couponPct);
-  const upiDisc    = r2(base * upiDiscPct);
-  const totalDisc  = r2(base * (couponPct + upiDiscPct));
-  const discBase   = r2(base - totalDisc);
-  const preShipping = r2(discBase + gst);
-  const shipping   = preShipping < FREE_SHIPPING_THRESHOLD ? SHIPPING_FEE : 0;
-  const grandTotal = r2(preShipping + shipping);
-  return { base, gst, couponDisc, upiDisc, totalDisc, discBase, preShipping, shipping, grandTotal };
+
+  // Prepaid (UPI full) discount — 1% on inclusive total after coupon
+  const afterCoupon  = r2(productTotal - couponDisc);
+  const prepaidDisc  = r2(afterCoupon * upiDiscPct);
+
+  // Taxable Amount = inclusive total after all discounts
+  const taxableAmount = r2(afterCoupon - prepaidDisc);
+
+  // GST extracted from taxable (5/105 of inclusive = 4.7619% of inclusive)
+  const gst = r2(taxableAmount * 5 / 105);
+
+  // Shipping on taxable amount
+  const shipping   = taxableAmount < FREE_SHIPPING_THRESHOLD ? SHIPPING_FEE : 0;
+
+  // Grand Total = Taxable + Shipping (GST already inside taxable)
+  const grandTotal = r2(taxableAmount + shipping);
+
+  const totalDisc = r2(couponDisc + prepaidDisc);
+
+  return {
+    productTotal,
+    couponDisc,
+    prepaidDisc,
+    taxableAmount,
+    gst,
+    shipping,
+    grandTotal,
+    totalDisc,
+    base,
+  };
 };
 
 const fmt         = (n) => parseFloat(n || 0).toFixed(2);
@@ -106,14 +153,33 @@ const useQtyUpdate = (showToast, fetchCart) => {
   return { saving, scheduleUpdate };
 };
 
+// ── Cart Row with thumbnail ───────────────────────────────────────────────────
+
 const CartRow = ({ item, index, onQtyChange, saving }) => {
   const { id, variation, quantity } = item;
   const price = parseFloat(variation?.b2b_price ?? 0);
+
+  // Best image: variation image > product main image
+  const thumb = variation?.image || variation?.product_image || null;
+
   return (
     <tr className={`border-b border-gray-100 dark:border-white/5 ${index % 2 === 0 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : 'bg-white dark:bg-transparent'}`}>
       <td className="px-6 py-4">
-        <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug max-w-[220px]">{variation?.product_name ?? '—'}</p>
-        <p className="text-gray-400 dark:text-zinc-500 text-xs font-mono mt-0.5">{variation?.sku ?? ''}</p>
+        <div className="flex items-center gap-3">
+          {/* Thumbnail */}
+          {thumb ? (
+            <img src={thumb} alt={variation?.product_name || ''}
+              className="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" />
+          ) : (
+            <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center border border-gray-100 dark:border-white/5">
+              <ShoppingCart className="w-5 h-5 text-gray-300 dark:text-zinc-600" />
+            </div>
+          )}
+          <div>
+            <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug max-w-[200px]">{variation?.product_name ?? '—'}</p>
+            <p className="text-gray-400 dark:text-zinc-500 text-xs font-mono mt-0.5">{variation?.sku ?? ''}</p>
+          </div>
+        </div>
       </td>
       <td className="px-6 py-4 text-gray-600 dark:text-zinc-300 text-sm">{variation?.size ?? '—'}</td>
       <td className="px-6 py-4 text-sm">
@@ -201,7 +267,7 @@ const AvailableOffers = ({ coupons, subtotal, appliedCoupon, onApply, onRemove }
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
                 <span className="text-green-700 dark:text-green-400 text-sm font-bold">{appliedCoupon.coupon_code}</span>
-                <span className="text-green-600 text-xs">−₹{fmt(appliedCoupon.coupon_disc_amount)} on base</span>
+                <span className="text-green-600 text-xs">−₹{fmt(appliedCoupon.coupon_disc_amount)}</span>
               </div>
               <button onClick={onRemove}><X className="w-4 h-4 text-green-500 hover:text-red-500 transition-colors" /></button>
             </div>
@@ -272,7 +338,7 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
   const couponPct  = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
   const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
 
-  const { base, gst, couponDisc, upiDisc, totalDisc, discBase, preShipping, shipping, grandTotal } =
+  const { productTotal, couponDisc, prepaidDisc, taxableAmount, gst, shipping, grandTotal, totalDisc } =
     calcGST(subtotal, couponPct, upiDiscPct);
 
   if (couponData && couponData.coupon_disc_amount === undefined) {
@@ -295,57 +361,56 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
         </div>
       </div>
 
-      <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-3.5 space-y-2 text-sm border border-gray-100 dark:border-white/5">
-        <div className="flex justify-between text-gray-700 dark:text-zinc-300">
-          <span className="font-semibold">Subtotal (incl. GST)</span>
-          <span className="font-semibold">₹{fmt(subtotal)}</span>
-        </div>
-        <div className="border-t border-gray-200 dark:border-white/10 pt-2 space-y-1.5">
-          <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-            <span>Base (95%)</span><span>₹{fmt(base)}</span>
-          </div>
-          {couponDisc > 0 && (
-            <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-              <span>Coupon ({(couponPct * 100).toFixed(0)}% on base)</span>
-              <span>−₹{fmt(couponDisc)}</span>
-            </div>
-          )}
-          {upiDisc > 0 && (
-            <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-              <span>Full UPI (1% on base)</span>
-              <span>−₹{fmt(upiDisc)}</span>
-            </div>
-          )}
-          {totalDisc > 0 && (
-            <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-dashed border-gray-200 dark:border-white/10 pt-1.5">
-              <span className="font-semibold">Discounted Base</span>
-              <span className="font-semibold">₹{fmt(discBase)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-            <span>GST @ 5%</span><span>₹{fmt(gst)}</span>
-          </div>
-          <div className="flex justify-between text-gray-500 dark:text-zinc-400 border-t border-gray-200 dark:border-white/10 pt-1.5">
-            <span>Pre-shipping Total</span><span>₹{fmt(preShipping)}</span>
-          </div>
-          {shipping > 0 ? (
-            <div className="flex justify-between text-orange-600 dark:text-orange-400 font-semibold">
-              <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
-              <span>+₹{fmt(shipping)}</span>
-            </div>
-          ) : (
-            <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-              <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
-              <span>FREE</span>
-            </div>
-          )}
-        </div>
-      </div>
-
+      {/* Coupon offers */}
       <AvailableOffers
         coupons={availableCoupons} subtotal={subtotal}
         appliedCoupon={couponData} onApply={onCouponApply} onRemove={onCouponRemove}
       />
+
+      {/* Price breakdown */}
+      <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-3.5 space-y-2.5 text-sm border border-gray-100 dark:border-white/5">
+
+        <div className="flex justify-between text-gray-700 dark:text-zinc-300">
+          <span className="font-semibold">Product Total</span>
+          <span className="font-semibold">₹{fmt(productTotal)}</span>
+        </div>
+
+        {couponDisc > 0 && (
+          <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
+            <span>Coupon Discount ({(couponPct * 100).toFixed(0)}%)</span>
+            <span>−₹{fmt(couponDisc)}</span>
+          </div>
+        )}
+
+        {prepaidDisc > 0 && (
+          <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
+            <span>Prepaid Discount (1%)</span>
+            <span>−₹{fmt(prepaidDisc)}</span>
+          </div>
+        )}
+
+        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-dashed border-gray-200 dark:border-white/10 pt-2">
+          <span className="font-semibold">Taxable Amount</span>
+          <span className="font-semibold">₹{fmt(taxableAmount)}</span>
+        </div>
+
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
+          <span>GST 5%</span>
+          <span>₹{fmt(gst)}</span>
+        </div>
+
+        {shipping > 0 ? (
+          <div className="flex justify-between text-orange-600 dark:text-orange-400 font-semibold">
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
+            <span>+₹{fmt(shipping)}</span>
+          </div>
+        ) : (
+          <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
+            <span>FREE</span>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-xl px-4 py-3">
         <span className="text-accent font-bold text-sm uppercase tracking-widest">Grand Total</span>
@@ -359,7 +424,7 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
       )}
       {shipping > 0 && (
         <p className="text-orange-600 dark:text-orange-400 text-xs text-center">
-          Add ₹{fmt(FREE_SHIPPING_THRESHOLD - preShipping)} more for free shipping
+          Add ₹{fmt(FREE_SHIPPING_THRESHOLD - taxableAmount)} more for free shipping
         </p>
       )}
       {totalDisc > 0 && (
@@ -374,9 +439,9 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
 // ── Proof Selector ────────────────────────────────────────────────────────────
 
 const PROOF_OPTIONS = [
-  { key: 'utr',        icon: Hash,   label: 'Enter UTR',           sub: 'Enter your 12-digit transaction ID'       },
-  { key: 'screenshot', icon: Upload, label: 'Upload Screenshot',   sub: 'Upload payment success screen image'      },
-  { key: 'none',       icon: Clock,  label: 'Submit Proof Later',  sub: 'Manual verification — takes up to 24 hrs' },
+  { key: 'utr',        icon: Hash,   label: 'Enter UTR',          sub: 'Enter your 12-digit transaction ID'       },
+  { key: 'screenshot', icon: Upload, label: 'Upload Screenshot',  sub: 'Upload payment success screen image'      },
+  { key: 'none',       icon: Clock,  label: 'Submit Proof Later', sub: 'Manual verification — takes up to 24 hrs' },
 ];
 
 const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, screenshotFile, setScreenshotFile }) => {
@@ -384,11 +449,7 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
 
   return (
     <div className="space-y-4">
-      <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">
-        Payment Proof
-      </p>
-
-      {/* 3-way toggle */}
+      <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">Payment Proof</p>
       <div className="grid grid-cols-3 gap-2">
         {PROOF_OPTIONS.map(opt => {
           const Icon     = opt.icon;
@@ -403,7 +464,6 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
         })}
       </div>
 
-      {/* Option A — UTR */}
       {proofType === 'utr' && (
         <div className="space-y-1.5">
           <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">
@@ -416,14 +476,12 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
         </div>
       )}
 
-      {/* Option B — Screenshot */}
       {proofType === 'screenshot' && (
         <div className="space-y-2">
           <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">
             Payment Screenshot *
           </label>
-          <div
-            onClick={() => fileRef.current?.click()}
+          <div onClick={() => fileRef.current?.click()}
             className={`cursor-pointer border-2 border-dashed rounded-xl p-5 flex flex-col items-center gap-2 transition-colors ${screenshotFile ? 'border-green-400 bg-green-50 dark:bg-green-500/5' : 'border-gray-200 dark:border-white/10 hover:border-accent/40 bg-gray-50 dark:bg-zinc-800'}`}>
             {screenshotFile ? (
               <>
@@ -444,14 +502,13 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
         </div>
       )}
 
-      {/* Option C — No proof warning */}
       {proofType === 'none' && (
         <div className="bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/25 rounded-xl px-4 py-3 flex items-start gap-3">
           <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
           <div>
             <p className="text-yellow-700 dark:text-yellow-400 text-sm font-semibold">Manual Verification</p>
             <p className="text-yellow-600 dark:text-yellow-500 text-xs mt-0.5">
-              Without a UTR or screenshot, our team will verify your payment manually by checking bank records.
+              Without a UTR or screenshot, our team will verify your payment manually.
               This may delay order processing by up to <strong>24 hours</strong>.
             </p>
           </div>
@@ -474,15 +531,15 @@ const DirectUPIPanel = ({
   const [copied, setCopied] = useState(false);
   const upiDiscPct = paymentPlan === 'full' ? 0.01 : 0;
 
-  const { gst, couponDisc, upiDisc, discBase, preShipping, shipping, grandTotal } =
+  const { prepaidDisc, taxableAmount, gst, shipping, grandTotal } =
     calcGST(subtotal, couponPct, upiDiscPct);
 
   const payableNow = paymentPlan === 'advance'
-    ? Math.round((preShipping * 0.10 + shipping) * 100) / 100
+    ? Math.round((taxableAmount * 0.10 + shipping) * 100) / 100
     : grandTotal;
 
   const balanceDue = paymentPlan === 'advance'
-    ? Math.round((preShipping - preShipping * 0.10) * 100) / 100
+    ? Math.round((taxableAmount - taxableAmount * 0.10) * 100) / 100
     : 0;
 
   const upiUri   = buildUpiUri(payableNow, `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
@@ -497,18 +554,17 @@ const DirectUPIPanel = ({
   const canConfirm = () => {
     if (proofType === 'utr')        return !!utrNumber.trim();
     if (proofType === 'screenshot') return !!screenshotFile;
-    return true; // 'none' — always allowed
+    return true;
   };
 
   return (
     <div className="space-y-5">
-      {/* Plan toggle */}
       <div>
         <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest mb-3">Choose Payment Plan</p>
         <div className="grid grid-cols-2 gap-3">
           {[
             { value: 'advance', label: '10% Advance', sub: 'Pay 10% + shipping now, rest on delivery' },
-            { value: 'full',    label: 'Full Payment', sub: 'Extra 1% off on base price'              },
+            { value: 'full',    label: 'Full Payment', sub: 'Extra 1% prepaid discount'               },
           ].map(opt => (
             <label key={opt.value} onClick={() => setPaymentPlan(opt.value)}
               className={`cursor-pointer rounded-xl border p-3.5 transition-all ${paymentPlan === opt.value ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300'}`}>
@@ -524,26 +580,17 @@ const DirectUPIPanel = ({
         </div>
       </div>
 
-      {/* Pricing breakdown */}
       <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 space-y-2 text-sm border border-gray-100 dark:border-white/5">
-        {couponDisc > 0 && (
+        {prepaidDisc > 0 && (
           <div className="flex justify-between text-green-600 font-semibold">
-            <span>Coupon discount (on base)</span><span>−₹{fmt(couponDisc)}</span>
-          </div>
-        )}
-        {upiDisc > 0 && (
-          <div className="flex justify-between text-green-600 font-semibold">
-            <span>Full UPI discount 1% (on base)</span><span>−₹{fmt(upiDisc)}</span>
+            <span>Prepaid Discount (1%)</span><span>−₹{fmt(prepaidDisc)}</span>
           </div>
         )}
         <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-          <span>Discounted Base</span><span>₹{fmt(discBase)}</span>
+          <span>Taxable Amount</span><span>₹{fmt(taxableAmount)}</span>
         </div>
         <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-          <span>GST (5%)</span><span>₹{fmt(gst)}</span>
-        </div>
-        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-          <span>Pre-shipping Total</span><span>₹{fmt(preShipping)}</span>
+          <span>GST 5%</span><span>₹{fmt(gst)}</span>
         </div>
         {shipping > 0 ? (
           <div className="flex justify-between text-orange-600 font-semibold">
@@ -569,7 +616,6 @@ const DirectUPIPanel = ({
         </div>
       </div>
 
-      {/* QR Code */}
       <div className="flex flex-col items-center gap-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
         <p className="text-gray-700 dark:text-zinc-300 text-sm font-bold">Scan to Pay ₹{fmt(payableNow)}</p>
         <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
@@ -593,7 +639,6 @@ const DirectUPIPanel = ({
         )}
       </div>
 
-      {/* 3-way proof selector */}
       <ProofSelector
         proofType={proofType} setProofType={setProofType}
         utrNumber={utrNumber} setUtrNumber={setUtrNumber}
@@ -604,7 +649,6 @@ const DirectUPIPanel = ({
         className="w-full flex items-center justify-center gap-2.5 bg-accent hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-6 py-3.5 rounded-xl transition-colors text-sm">
         {confirming ? <><Loader className="animate-spin w-4 h-4" /> Confirming…</> : <><PackageCheck className="w-4 h-4" /> Confirm Order</>}
       </button>
-
       {proofType === 'none' && (
         <p className="text-yellow-600 dark:text-yellow-500 text-xs text-center">
           ⏳ No proof submitted — verification may take up to 24 hours.
@@ -762,23 +806,16 @@ const Cart = () => {
   const handleUpiConfirm = async () => {
     if (!shippingId) { showToast('Please select a shipping address.', 'error'); return; }
     if (!billingId)  { showToast('Please select a billing address.', 'error'); return; }
-
     setUpiConfirming(true);
     try {
-      // Always use FormData to support file uploads
       const formData = new FormData();
       formData.append('payment_plan',        paymentPlan);
       formData.append('proof_type',          proofType);
       formData.append('shipping_address_id', shippingId);
       formData.append('billing_address_id',  billingId);
       formData.append('coupon_code',         couponData?.coupon_code || '');
-
-      if (proofType === 'utr') {
-        formData.append('utr_number', utrNumber.trim());
-      }
-      if (proofType === 'screenshot' && screenshotFile) {
-        formData.append('payment_screenshot', screenshotFile);
-      }
+      if (proofType === 'utr')                         formData.append('utr_number', utrNumber.trim());
+      if (proofType === 'screenshot' && screenshotFile) formData.append('payment_screenshot', screenshotFile);
 
       const res = await api.post('orders/upi/checkout/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -887,6 +924,7 @@ const Cart = () => {
 
         {!success && !loading && items.length > 0 && (
           <div className="space-y-8">
+            {/* Desktop table */}
             <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-sm">
               <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5">
                 <h2 className="text-gray-900 dark:text-zinc-100 font-bold text-lg">Cart Items</h2>
@@ -898,7 +936,7 @@ const Cart = () => {
                       <th className="text-left px-6 py-4">Product</th>
                       <th className="text-left px-6 py-4">Size</th>
                       <th className="text-left px-6 py-4">Color</th>
-                      <th className="text-left px-6 py-4">B2B Price</th>
+                      <th className="text-left px-6 py-4">Wholesale Price</th>
                       <th className="text-left px-6 py-4">Quantity</th>
                       <th className="text-left px-6 py-4">Subtotal</th>
                       <th className="px-6 py-4" />
@@ -913,29 +951,47 @@ const Cart = () => {
               </div>
             </div>
 
+            {/* Mobile cards */}
             <div className="md:hidden space-y-3">
-              {items.map(item => (
-                <div key={item.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-4 shadow-sm">
-                  <div className="flex justify-between items-start mb-1">
-                    <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">{item.variation?.product_name}</p>
-                    <button onClick={() => handleQtyChange(item.id, 0)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+              {items.map(item => {
+                const thumb = item.variation?.image || item.variation?.product_image || null;
+                return (
+                  <div key={item.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-4 shadow-sm">
+                    <div className="flex gap-3 mb-3">
+                      {thumb ? (
+                        <img src={thumb} alt={item.variation?.product_name || ''}
+                          className="w-16 h-16 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center">
+                          <ShoppingCart className="w-5 h-5 text-gray-300 dark:text-zinc-600" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                          <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug">{item.variation?.product_name}</p>
+                          <button onClick={() => handleQtyChange(item.id, 0)} className="text-gray-400 hover:text-red-500 ml-2 shrink-0">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <p className="text-gray-400 text-xs font-mono mt-0.5">{item.variation?.sku}</p>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                          <span>{item.variation?.size}</span><span>/</span>
+                          <ColorSwatch hex={item.variation?.color_hex || '#CCCCCC'} name={item.variation?.color_name || item.variation?.color || '—'} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <QtyControl value={item.quantity} saving={!!saving[item.id]}
+                        onDecrement={() => handleQtyChange(item.id, item.quantity - 1)}
+                        onIncrement={() => handleQtyChange(item.id, item.quantity + 1)}
+                        onDirectChange={(v) => handleQtyChange(item.id, v)} />
+                      <span className="text-gray-900 dark:text-zinc-100 font-bold">
+                        ₹{(parseFloat(item.variation?.b2b_price ?? 0) * item.quantity).toFixed(2)}
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-gray-400 text-xs font-mono mb-1">{item.variation?.sku}</p>
-                  <div className="flex items-center gap-2 mb-3 text-xs text-gray-500">
-                    <span>{item.variation?.size}</span><span>/</span>
-                    <ColorSwatch hex={item.variation?.color_hex || '#CCCCCC'} name={item.variation?.color_name || item.variation?.color || '—'} />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <QtyControl value={item.quantity} saving={!!saving[item.id]}
-                      onDecrement={() => handleQtyChange(item.id, item.quantity - 1)}
-                      onIncrement={() => handleQtyChange(item.id, item.quantity + 1)}
-                      onDirectChange={(v) => handleQtyChange(item.id, v)} />
-                    <span className="text-gray-900 dark:text-zinc-100 font-bold">
-                      ₹{(parseFloat(item.variation?.b2b_price ?? 0) * item.quantity).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <CheckoutPanel
