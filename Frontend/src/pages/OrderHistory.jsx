@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Loader, PackageSearch, MapPin, ExternalLink } from 'lucide-react';
+import { Loader, PackageSearch, MapPin, ExternalLink, CheckCircle2 } from 'lucide-react';
 import api from '../api/axios';
 import TrackingTimelineModal from '../components/shared/TrackingTimelineModal';
+
+const SELLER_GSTIN = '24AEXPJ4984P1ZD';
+const SELLER_NAME  = 'M. SANKLECHA CREATION';
 
 const STATUS_STYLES = {
   PENDING_VERIFICATION: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
@@ -18,10 +21,22 @@ const StatusPill = ({ status }) => (
   </span>
 );
 
-const OrderCard = ({ order, onTrack }) => {
-  const statusUpper = order.status?.toUpperCase();
+const GSTSellerBlock = () => (
+  <div className="px-6 py-3 border-t border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-zinc-800/30">
+    <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400 text-xs font-bold mb-1">
+      <CheckCircle2 className="w-3.5 h-3.5" /> GST Invoice Available
+    </div>
+    <p className="text-gray-500 dark:text-zinc-400 text-xs">
+      <span className="font-semibold text-gray-700 dark:text-zinc-300">Seller: </span>{SELLER_NAME}
+      <span className="mx-2 text-gray-300 dark:text-zinc-600">·</span>
+      <span className="font-semibold text-gray-700 dark:text-zinc-300">GSTIN: </span>
+      <span className="font-mono">{SELLER_GSTIN}</span>
+    </p>
+  </div>
+);
 
-  // Bug fix: show Track button for both SHIPPED and DELIVERED orders
+const OrderCard = ({ order, onTrack }) => {
+  const statusUpper  = order.status?.toUpperCase();
   const canTrack     = ['SHIPPED', 'DELIVERED'].includes(statusUpper);
   const hasTracking  = !!order.tracking_number;
   const showTrackBtn = canTrack && hasTracking;
@@ -34,28 +49,16 @@ const OrderCard = ({ order, onTrack }) => {
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-gray-100 dark:border-white/5">
         <div>
-          <p className="text-gray-400 dark:text-zinc-500 text-xs font-semibold uppercase tracking-widest">
-            Order #{order.id}
-          </p>
+          <p className="text-gray-400 dark:text-zinc-500 text-xs font-semibold uppercase tracking-widest">Order #{order.id}</p>
           <p className="text-gray-900 dark:text-zinc-100 font-bold mt-0.5">
-            {new Date(order.created_at).toLocaleDateString('en-IN', {
-              day: '2-digit', month: 'short', year: 'numeric',
-            })}
+            {new Date(order.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
           </p>
         </div>
-
         <div className="flex items-center gap-3 flex-wrap">
           <StatusPill status={order.status} />
-
           <div className="text-right">
-            {hasDiscount && (
-              <p className="text-gray-400 dark:text-zinc-500 text-xs line-through">
-                ₹{parseFloat(order.total_amount).toFixed(2)}
-              </p>
-            )}
-            <p className="text-gray-900 dark:text-zinc-100 text-lg font-black">
-              ₹{parseFloat(grandTotal).toFixed(2)}
-            </p>
+            {hasDiscount && <p className="text-gray-400 dark:text-zinc-500 text-xs line-through">₹{parseFloat(order.total_amount).toFixed(2)}</p>}
+            <p className="text-gray-900 dark:text-zinc-100 text-lg font-black">₹{parseFloat(grandTotal).toFixed(2)}</p>
             {hasDiscount && (
               <p className="text-green-600 dark:text-green-400 text-xs font-semibold">
                 Saved ₹{parseFloat(order.discount_amount).toFixed(2)}
@@ -63,14 +66,10 @@ const OrderCard = ({ order, onTrack }) => {
               </p>
             )}
           </div>
-
           {showTrackBtn && (
-            <button
-              onClick={() => onTrack(order)}
-              className="inline-flex items-center gap-1.5 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 border border-blue-200 dark:border-blue-500/20 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
-            >
-              <MapPin className="w-3.5 h-3.5" />
-              Track Package
+            <button onClick={() => onTrack(order)}
+              className="inline-flex items-center gap-1.5 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 border border-blue-200 dark:border-blue-500/20 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors">
+              <MapPin className="w-3.5 h-3.5" /> Track Package
             </button>
           )}
         </div>
@@ -78,9 +77,7 @@ const OrderCard = ({ order, onTrack }) => {
 
       {hasTracking && (
         <div className="px-6 py-2.5 bg-purple-50/50 dark:bg-purple-500/5 border-b border-purple-100 dark:border-purple-500/10 flex items-center gap-3 flex-wrap">
-          {order.courier_name && (
-            <span className="text-purple-700 dark:text-purple-400 text-xs font-bold">{order.courier_name}</span>
-          )}
+          {order.courier_name && <span className="text-purple-700 dark:text-purple-400 text-xs font-bold">{order.courier_name}</span>}
           <span className="text-gray-500 dark:text-zinc-400 text-xs font-mono">{order.tracking_number}</span>
           {order.tracking_url && (
             <a href={order.tracking_url} target="_blank" rel="noopener noreferrer"
@@ -95,18 +92,12 @@ const OrderCard = ({ order, onTrack }) => {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {order.items.map(item => (
             <div key={item.id} className="text-sm">
-              <p className="text-gray-900 dark:text-zinc-100 font-semibold leading-snug">
-                {item.variation.product_name}
-              </p>
+              <p className="text-gray-900 dark:text-zinc-100 font-semibold leading-snug">{item.variation.product_name}</p>
               <p className="text-gray-500 dark:text-zinc-400 text-xs mt-0.5">
                 {item.quantity} × {item.variation.size}
-                {item.variation.color_name && (
-                  <span className="ml-1 text-gray-400 dark:text-zinc-500">/ {item.variation.color_name}</span>
-                )}
+                {item.variation.color_name && <span className="ml-1 text-gray-400 dark:text-zinc-500">/ {item.variation.color_name}</span>}
               </p>
-              <p className="text-accent text-xs font-semibold mt-0.5">
-                ₹{parseFloat(item.price).toFixed(2)}/pc
-              </p>
+              <p className="text-accent text-xs font-semibold mt-0.5">₹{parseFloat(item.price).toFixed(2)}/pc</p>
             </div>
           ))}
         </div>
@@ -118,11 +109,11 @@ const OrderCard = ({ order, onTrack }) => {
           {order.payment_method && ` · ${order.payment_method.replace(/_/g, ' ')}`}
         </p>
         {order.shipping_address && (
-          <p className="text-gray-400 dark:text-zinc-500 text-xs">
-            {order.shipping_address.city}, {order.shipping_address.state}
-          </p>
+          <p className="text-gray-400 dark:text-zinc-500 text-xs">{order.shipping_address.city}, {order.shipping_address.state}</p>
         )}
       </div>
+
+      <GSTSellerBlock />
     </div>
   );
 };
@@ -142,7 +133,6 @@ const OrderHistory = () => {
   return (
     <div className="bg-gray-50 dark:bg-zinc-950 min-h-screen px-4 py-10">
       <div className="max-w-5xl mx-auto">
-
         <div className="mb-8">
           <h1 className="text-gray-900 dark:text-zinc-100 text-3xl font-black">Order History</h1>
           <p className="text-gray-500 dark:text-zinc-400 text-sm mt-1">
@@ -151,9 +141,7 @@ const OrderHistory = () => {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <Loader className="animate-spin text-accent w-9 h-9" />
-          </div>
+          <div className="flex items-center justify-center py-24"><Loader className="animate-spin text-accent w-9 h-9" /></div>
         ) : orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4">
             <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center">
@@ -164,18 +152,12 @@ const OrderHistory = () => {
           </div>
         ) : (
           <div className="space-y-5">
-            {orders.map(order => (
-              <OrderCard key={order.id} order={order} onTrack={setTrackingOrder} />
-            ))}
+            {orders.map(order => <OrderCard key={order.id} order={order} onTrack={setTrackingOrder} />)}
           </div>
         )}
       </div>
 
-      <TrackingTimelineModal
-        order={trackingOrder}
-        isOpen={!!trackingOrder}
-        onClose={() => setTrackingOrder(null)}
-      />
+      <TrackingTimelineModal order={trackingOrder} isOpen={!!trackingOrder} onClose={() => setTrackingOrder(null)} />
     </div>
   );
 };

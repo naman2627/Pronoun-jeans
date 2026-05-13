@@ -16,16 +16,13 @@ class Category(models.Model):
 
 class HeroSlide(models.Model):
     image     = models.ImageField(upload_to='hero_slides/')
-    caption   = models.CharField(max_length=255, blank=True,
-                                 help_text='Optional caption shown on the slide.')
-    order     = models.PositiveSmallIntegerField(default=0,
-                                                 help_text='Lower number = shown first.')
-    is_active = models.BooleanField(default=True,
-                                    help_text='Uncheck to hide this slide without deleting it.')
+    caption   = models.CharField(max_length=255, blank=True)
+    order     = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ['order', 'id']
-        verbose_name      = 'Hero Slide'
+        ordering            = ['order', 'id']
+        verbose_name        = 'Hero Slide'
         verbose_name_plural = 'Hero Slides'
 
     def __str__(self):
@@ -39,7 +36,7 @@ class Product(models.Model):
     description    = models.TextField(blank=True)
     fabric_details = models.TextField(blank=True, null=True)
     is_active      = models.BooleanField(default=True)
-    moq            = models.PositiveIntegerField(default=10, help_text="Minimum Order Quantity for B2B clients")
+    moq            = models.PositiveIntegerField(default=10)
     image          = models.ImageField(upload_to='products/', blank=True, null=True)
     created_at     = models.DateTimeField(auto_now_add=True)
 
@@ -75,12 +72,22 @@ class ProductVariation(models.Model):
     product         = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="variations")
     size            = models.CharField(max_length=50)
     color           = models.CharField(max_length=100, blank=True, null=True)
-    color_palette   = models.ForeignKey(Color, on_delete=models.SET_NULL, null=True, blank=True, related_name='variations')
+    color_palette   = models.ForeignKey(
+        Color, on_delete=models.SET_NULL, null=True, blank=True, related_name='variations'
+    )
     sku             = models.CharField(max_length=100, unique=True)
+
     b2b_price       = models.DecimalField(max_digits=10, decimal_places=2)
     per_piece_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     mrp             = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     mrp_per_piece   = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
+    # Feature 1: size breakdown for sets e.g. "1xL, 2xXL, 1x2XL, 1x3XL"
+    set_breakdown   = models.CharField(
+        max_length=255, blank=True, null=True,
+        help_text='Size breakdown of the set, e.g. "1xL, 2xXL, 1x2XL, 1x3XL"',
+    )
+
     stock_quantity  = models.PositiveIntegerField(default=0)
     image           = models.ImageField(upload_to='variations/', null=True, blank=True)
 
@@ -114,5 +121,4 @@ class ProductVariation(models.Model):
             if 'product' in self.__dict__
             else f"SKU {self.sku}"
         )
-        color_label = self.color or '—'
-        return f"{product_name} | {self.size} | {color_label}"
+        return f"{product_name} | {self.size} | {self.color or '—'}"

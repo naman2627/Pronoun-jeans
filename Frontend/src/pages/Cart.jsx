@@ -6,7 +6,7 @@ import {
   Tag, ReceiptText, Plus, Minus, Trash2,
   Truck, CreditCard, Building, ShieldCheck, Smartphone,
   X, Lock, Unlock, ChevronDown, ChevronUp, Copy, Check,
-  Upload, Hash, Clock,
+  Upload, Hash, Clock, Pencil, Info,
 } from 'lucide-react';
 import api from '../api/axios';
 import { useCartStore } from '../store/useCartStore';
@@ -15,6 +15,9 @@ const UPI_ID        = 'pronoun@kotak';
 const BUSINESS_NAME = 'Pronoun Jeans';
 const SHIPPING_FEE  = 300;
 const FREE_SHIPPING_THRESHOLD = 15000;
+
+const SELLER_GSTIN = '24AEXPJ4984P1ZD';
+const SELLER_NAME  = 'M. SANKLECHA CREATION';
 
 const loadRazorpayScript = () =>
   new Promise((resolve) => {
@@ -26,70 +29,41 @@ const loadRazorpayScript = () =>
     document.body.appendChild(s);
   });
 
-// ── GST Math ──────────────────────────────────────────────────────────────────
-//
-// All b2b_prices are GST-inclusive (5% baked in).
-//
-// productTotal  = sum of (price × qty)          — inclusive
-// prepaidDisc   = productTotal × upiDiscPct     — 1% off for full UPI (on inclusive total)
-// taxableAmount = productTotal - prepaidDisc    — base before GST
-// gst           = taxableAmount × 0.05 / 1.05  — extract 5% GST from taxable
-//   OR simpler: taxableAmount * (5/105)
-// discountedBase = taxableAmount - gst          — pure base
-// shipping      = 300 if taxableAmount < 15000 else 0
-// grandTotal    = taxableAmount + shipping      (GST already inside taxableAmount)
-//
-// Wait — the requirement says:
-//   Taxable Amount = Product Total - Discount  (this is the GST-inclusive discounted total)
-//   GST 5%         = 5% of Taxable Amount      (extracted from inclusive price = taxable * 5/105)
-//   Grand Total    = Taxable Amount + Shipping  (GST is already inside taxable)
-//
-// Coupon discounts: applied on the base (95% portion) as before.
-
 const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
-  const r2 = (n) => Math.round(n * 100) / 100;
-
-  // Product Total = full inclusive subtotal
+  const r2           = (n) => Math.round(n * 100) / 100;
   const productTotal = r2(subtotal);
-
-  // Coupon discount — applied on the 95% base portion
-  const base       = r2(productTotal * 0.95);
-  const couponDisc = r2(base * couponPct);
-
-  // Prepaid (UPI full) discount — 1% on inclusive total after coupon
+  const base         = r2(productTotal * 0.95);
+  const couponDisc   = r2(base * couponPct);
   const afterCoupon  = r2(productTotal - couponDisc);
   const prepaidDisc  = r2(afterCoupon * upiDiscPct);
-
-  // Taxable Amount = inclusive total after all discounts
   const taxableAmount = r2(afterCoupon - prepaidDisc);
-
-  // GST extracted from taxable (5/105 of inclusive = 4.7619% of inclusive)
-  const gst = r2(taxableAmount * 5 / 105);
-
-  // Shipping on taxable amount
-  const shipping   = taxableAmount < FREE_SHIPPING_THRESHOLD ? SHIPPING_FEE : 0;
-
-  // Grand Total = Taxable + Shipping (GST already inside taxable)
-  const grandTotal = r2(taxableAmount + shipping);
-
-  const totalDisc = r2(couponDisc + prepaidDisc);
-
-  return {
-    productTotal,
-    couponDisc,
-    prepaidDisc,
-    taxableAmount,
-    gst,
-    shipping,
-    grandTotal,
-    totalDisc,
-    base,
-  };
+  const gst          = r2(taxableAmount * 5 / 105);
+  const shipping     = taxableAmount < FREE_SHIPPING_THRESHOLD ? SHIPPING_FEE : 0;
+  const grandTotal   = r2(taxableAmount + shipping);
+  const totalDisc    = r2(couponDisc + prepaidDisc);
+  return { productTotal, couponDisc, prepaidDisc, taxableAmount, gst, shipping, grandTotal, totalDisc, base };
 };
 
 const fmt         = (n) => parseFloat(n || 0).toFixed(2);
 const buildUpiUri = (amount, note = 'B2B Order') =>
   `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(BUSINESS_NAME)}&am=${fmt(amount)}&cu=INR&tn=${encodeURIComponent(note)}`;
+
+// ── GST Seller Block ──────────────────────────────────────────────────────────
+
+const GSTSellerBlock = () => (
+  <div className="bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-white/5 rounded-xl px-4 py-3 space-y-1">
+    <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400 text-xs font-bold mb-1">
+      <CheckCircle2 className="w-3.5 h-3.5" /> GST Invoice Available
+    </div>
+    <p className="text-gray-500 dark:text-zinc-400 text-xs">
+      <span className="font-semibold text-gray-700 dark:text-zinc-300">Seller: </span>{SELLER_NAME}
+    </p>
+    <p className="text-gray-500 dark:text-zinc-400 text-xs">
+      <span className="font-semibold text-gray-700 dark:text-zinc-300">GSTIN: </span>
+      <span className="font-mono">{SELLER_GSTIN}</span>
+    </p>
+  </div>
+);
 
 const ColorSwatch = ({ hex, name }) => (
   <span className="inline-flex items-center gap-1.5">
@@ -153,25 +127,19 @@ const useQtyUpdate = (showToast, fetchCart) => {
   return { saving, scheduleUpdate };
 };
 
-// ── Cart Row with thumbnail ───────────────────────────────────────────────────
-
 const CartRow = ({ item, index, onQtyChange, saving }) => {
   const { id, variation, quantity } = item;
   const price = parseFloat(variation?.b2b_price ?? 0);
-
-  // Best image: variation image > product main image
   const thumb = variation?.image || variation?.product_image || null;
-
   return (
     <tr className={`border-b border-gray-100 dark:border-white/5 ${index % 2 === 0 ? 'bg-gray-50/50 dark:bg-white/[0.015]' : 'bg-white dark:bg-transparent'}`}>
       <td className="px-6 py-4">
         <div className="flex items-center gap-3">
-          {/* Thumbnail */}
           {thumb ? (
             <img src={thumb} alt={variation?.product_name || ''}
               className="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" />
           ) : (
-            <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center border border-gray-100 dark:border-white/5">
+            <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center">
               <ShoppingCart className="w-5 h-5 text-gray-300 dark:text-zinc-600" />
             </div>
           )}
@@ -202,12 +170,84 @@ const CartRow = ({ item, index, onQtyChange, saving }) => {
   );
 };
 
-const AddressCard = ({ addr, selected, onSelect, type }) => {
+// ── Address Edit Modal ────────────────────────────────────────────────────────
+
+const EMPTY_ADDR = {
+  address_line_1: '', address_line_2: '', city: '', state: '',
+  pincode: '', is_default_shipping: false, is_default_billing: false,
+};
+
+const AddressEditModal = ({ address, onClose, onSaved }) => {
+  const [form, setForm]         = useState({ ...EMPTY_ADDR, ...address });
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
+
+  const handleSave = async () => {
+    if (!form.address_line_1 || !form.city || !form.state || !form.pincode) {
+      setError('Please fill in all required fields.'); return;
+    }
+    setSaving(true); setError('');
+    try {
+      await api.put(`accounts/addresses/${address.id}/`, form);
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to save address.');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 shadow-xl p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-gray-900 dark:text-zinc-100 font-bold">Edit Address</h3>
+          <button onClick={onClose}><X className="w-4 h-4 text-gray-400 hover:text-gray-700 dark:hover:text-white" /></button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            { label: 'Address Line 1 *', key: 'address_line_1' },
+            { label: 'Address Line 2',   key: 'address_line_2' },
+            { label: 'City *',           key: 'city'           },
+            { label: 'State *',          key: 'state'          },
+            { label: 'Pincode *',        key: 'pincode'        },
+          ].map(({ label, key }) => (
+            <div key={key}>
+              <label className="text-gray-500 dark:text-zinc-400 text-xs font-bold uppercase tracking-widest block mb-1">{label}</label>
+              <input value={form[key] || ''} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent transition-colors" />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 text-gray-600 dark:text-zinc-300 text-sm cursor-pointer">
+            <input type="checkbox" checked={form.is_default_shipping} onChange={e => setForm(p => ({ ...p, is_default_shipping: e.target.checked }))} className="accent-accent" />
+            <Truck className="w-3.5 h-3.5 text-accent" /> Default Shipping
+          </label>
+          <label className="flex items-center gap-2 text-gray-600 dark:text-zinc-300 text-sm cursor-pointer">
+            <input type="checkbox" checked={form.is_default_billing} onChange={e => setForm(p => ({ ...p, is_default_billing: e.target.checked }))} className="accent-accent" />
+            <CreditCard className="w-3.5 h-3.5 text-accent" /> Default Billing
+          </label>
+        </div>
+        {error && <p className="text-red-500 text-xs">{error}</p>}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-300 font-bold py-2.5 rounded-xl text-sm">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 flex items-center justify-center gap-2 bg-accent hover:bg-red-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm">
+            {saving ? <Loader className="animate-spin w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Address Card ──────────────────────────────────────────────────────────────
+
+const AddressCard = ({ addr, selected, onSelect, type, onEdit }) => {
   const Icon = type === 'shipping' ? Truck : Building;
   return (
-    <div onClick={() => onSelect(addr.id)}
-      className={`cursor-pointer rounded-xl border p-4 transition-all ${selected ? 'border-accent/60 bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300 dark:hover:border-white/20'}`}>
-      <div className="flex items-start justify-between gap-2 mb-2">
+    <div className={`rounded-xl border p-4 transition-all ${selected ? 'border-accent/60 bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300 dark:hover:border-white/20'}`}>
+      <div className="flex items-start justify-between gap-2 mb-2 cursor-pointer" onClick={() => onSelect(addr.id)}>
         <div className="flex items-center gap-2">
           <Icon className={`w-3.5 h-3.5 ${selected ? 'text-accent' : 'text-gray-400'}`} />
           <span className={`text-xs font-bold uppercase tracking-widest ${selected ? 'text-accent' : 'text-gray-500'}`}>
@@ -216,9 +256,15 @@ const AddressCard = ({ addr, selected, onSelect, type }) => {
         </div>
         {selected && <CheckCircle2 className="w-4 h-4 text-accent shrink-0" />}
       </div>
-      <p className="text-gray-900 dark:text-zinc-100 text-sm font-semibold">{addr.address_line_1}</p>
-      {addr.address_line_2 && <p className="text-gray-500 text-xs">{addr.address_line_2}</p>}
-      <p className="text-gray-500 text-xs">{addr.city}, {addr.state} — {addr.pincode}</p>
+      <div className="cursor-pointer" onClick={() => onSelect(addr.id)}>
+        <p className="text-gray-900 dark:text-zinc-100 text-sm font-semibold">{addr.address_line_1}</p>
+        {addr.address_line_2 && <p className="text-gray-500 text-xs">{addr.address_line_2}</p>}
+        <p className="text-gray-500 text-xs">{addr.city}, {addr.state} — {addr.pincode}</p>
+      </div>
+      <button onClick={() => onEdit(addr)}
+        className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-accent transition-colors font-semibold">
+        <Pencil className="w-3 h-3" /> Edit
+      </button>
     </div>
   );
 };
@@ -259,7 +305,6 @@ const AvailableOffers = ({ coupons, subtotal, appliedCoupon, onApply, onRemove }
         </div>
         {expanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
       </button>
-
       {expanded && (
         <div className="space-y-2">
           {appliedCoupon && (
@@ -289,16 +334,8 @@ const AvailableOffers = ({ coupons, subtotal, appliedCoupon, onApply, onRemove }
                         <span className="font-mono font-bold text-sm text-gray-900 dark:text-zinc-100">{c.code}</span>
                         <span className="text-accent text-xs font-bold">{couponLabel(c)}</span>
                       </div>
-                      {!unlocked && (
-                        <p className="text-yellow-600 text-xs mt-0.5">
-                          Add ₹{shortfall.toLocaleString('en-IN', { maximumFractionDigits: 0 })} more to unlock
-                        </p>
-                      )}
-                      {unlocked && minVal > 0 && (
-                        <p className="text-gray-400 text-xs mt-0.5">
-                          Min order ₹{minVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                        </p>
-                      )}
+                      {!unlocked && <p className="text-yellow-600 text-xs mt-0.5">Add ₹{shortfall.toLocaleString('en-IN', { maximumFractionDigits: 0 })} more to unlock</p>}
+                      {unlocked && parseFloat(c.min_order_value) > 0 && <p className="text-gray-400 text-xs mt-0.5">Min order ₹{minVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>}
                     </div>
                   </div>
                   {isApplied ? (
@@ -314,7 +351,6 @@ const AvailableOffers = ({ coupons, subtotal, appliedCoupon, onApply, onRemove }
               </div>
             );
           })}
-
           <div className="pt-1 space-y-1.5">
             <div className="flex gap-2">
               <input type="text" value={manualCode} onChange={e => setManualCode(e.target.value.toUpperCase())}
@@ -337,13 +373,10 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
   const subtotal   = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
   const couponPct  = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
   const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
-
   const { productTotal, couponDisc, prepaidDisc, taxableAmount, gst, shipping, grandTotal, totalDisc } =
     calcGST(subtotal, couponPct, upiDiscPct);
 
-  if (couponData && couponData.coupon_disc_amount === undefined) {
-    couponData.coupon_disc_amount = couponDisc;
-  }
+  if (couponData && couponData.coupon_disc_amount === undefined) couponData.coupon_disc_amount = couponDisc;
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 space-y-4 sticky top-6 shadow-sm">
@@ -351,7 +384,6 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
         <ReceiptText className="w-5 h-5 text-accent" />
         <h2 className="text-gray-900 dark:text-zinc-100 font-bold text-lg">Order Summary</h2>
       </div>
-
       <div className="space-y-1.5 text-sm">
         <div className="flex justify-between text-gray-500 dark:text-zinc-400">
           <span>SKU Lines</span><span className="font-semibold text-gray-900 dark:text-zinc-100">{items.length}</span>
@@ -361,53 +393,36 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
         </div>
       </div>
 
-      {/* Coupon offers */}
-      <AvailableOffers
-        coupons={availableCoupons} subtotal={subtotal}
-        appliedCoupon={couponData} onApply={onCouponApply} onRemove={onCouponRemove}
-      />
+      <AvailableOffers coupons={availableCoupons} subtotal={subtotal}
+        appliedCoupon={couponData} onApply={onCouponApply} onRemove={onCouponRemove} />
 
-      {/* Price breakdown */}
       <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-3.5 space-y-2.5 text-sm border border-gray-100 dark:border-white/5">
-
         <div className="flex justify-between text-gray-700 dark:text-zinc-300">
-          <span className="font-semibold">Product Total</span>
-          <span className="font-semibold">₹{fmt(productTotal)}</span>
+          <span className="font-semibold">Product Total</span><span className="font-semibold">₹{fmt(productTotal)}</span>
         </div>
-
         {couponDisc > 0 && (
           <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-            <span>Coupon Discount ({(couponPct * 100).toFixed(0)}%)</span>
-            <span>−₹{fmt(couponDisc)}</span>
+            <span>Coupon Discount</span><span>−₹{fmt(couponDisc)}</span>
           </div>
         )}
-
         {prepaidDisc > 0 && (
           <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-            <span>Prepaid Discount (1%)</span>
-            <span>−₹{fmt(prepaidDisc)}</span>
+            <span>Prepaid Discount (1%)</span><span>−₹{fmt(prepaidDisc)}</span>
           </div>
         )}
-
         <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-dashed border-gray-200 dark:border-white/10 pt-2">
-          <span className="font-semibold">Taxable Amount</span>
-          <span className="font-semibold">₹{fmt(taxableAmount)}</span>
+          <span className="font-semibold">Taxable Amount</span><span className="font-semibold">₹{fmt(taxableAmount)}</span>
         </div>
-
         <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-          <span>GST 5%</span>
-          <span>₹{fmt(gst)}</span>
+          <span>GST 5%</span><span>₹{fmt(gst)}</span>
         </div>
-
         {shipping > 0 ? (
           <div className="flex justify-between text-orange-600 dark:text-orange-400 font-semibold">
-            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
-            <span>+₹{fmt(shipping)}</span>
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span><span>+₹{fmt(shipping)}</span>
           </div>
         ) : (
           <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
-            <span>FREE</span>
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span><span>FREE</span>
           </div>
         )}
       </div>
@@ -417,26 +432,14 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
         <span className="text-gray-900 dark:text-zinc-100 font-extrabold text-xl">₹{fmt(grandTotal)}</span>
       </div>
 
-      {shipping === 0 && (
-        <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">
-          🚚 Free shipping on orders above ₹15,000!
-        </p>
-      )}
-      {shipping > 0 && (
-        <p className="text-orange-600 dark:text-orange-400 text-xs text-center">
-          Add ₹{fmt(FREE_SHIPPING_THRESHOLD - taxableAmount)} more for free shipping
-        </p>
-      )}
-      {totalDisc > 0 && (
-        <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">
-          You save ₹{fmt(totalDisc)} on this order 🎉
-        </p>
-      )}
+      {shipping === 0 && <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">🚚 Free shipping on orders above ₹15,000!</p>}
+      {shipping > 0 && <p className="text-orange-600 dark:text-orange-400 text-xs text-center">Add ₹{fmt(FREE_SHIPPING_THRESHOLD - taxableAmount)} more for free shipping</p>}
+      {totalDisc > 0 && <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">You save ₹{fmt(totalDisc)} on this order 🎉</p>}
+
+      <GSTSellerBlock />
     </div>
   );
 };
-
-// ── Proof Selector ────────────────────────────────────────────────────────────
 
 const PROOF_OPTIONS = [
   { key: 'utr',        icon: Hash,   label: 'Enter UTR',          sub: 'Enter your 12-digit transaction ID'       },
@@ -446,71 +449,50 @@ const PROOF_OPTIONS = [
 
 const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, screenshotFile, setScreenshotFile }) => {
   const fileRef = useRef(null);
-
   return (
     <div className="space-y-4">
       <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">Payment Proof</p>
       <div className="grid grid-cols-3 gap-2">
         {PROOF_OPTIONS.map(opt => {
-          const Icon     = opt.icon;
-          const selected = proofType === opt.key;
+          const Icon = opt.icon;
+          const sel  = proofType === opt.key;
           return (
             <button key={opt.key} onClick={() => setProofType(opt.key)}
-              className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all ${selected ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300'}`}>
-              <Icon className={`w-4 h-4 ${selected ? 'text-accent' : 'text-gray-400'}`} />
-              <p className={`text-xs font-bold leading-tight ${selected ? 'text-accent' : 'text-gray-700 dark:text-zinc-300'}`}>{opt.label}</p>
+              className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center transition-all ${sel ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300'}`}>
+              <Icon className={`w-4 h-4 ${sel ? 'text-accent' : 'text-gray-400'}`} />
+              <p className={`text-xs font-bold leading-tight ${sel ? 'text-accent' : 'text-gray-700 dark:text-zinc-300'}`}>{opt.label}</p>
             </button>
           );
         })}
       </div>
-
       {proofType === 'utr' && (
         <div className="space-y-1.5">
-          <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">
-            UPI Transaction Reference (UTR) *
-          </label>
-          <input type="text" value={utrNumber} onChange={e => setUtrNumber(e.target.value.trim())}
-            placeholder="e.g. 426813598234"
+          <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">UPI Transaction Reference (UTR) *</label>
+          <input type="text" value={utrNumber} onChange={e => setUtrNumber(e.target.value.trim())} placeholder="e.g. 426813598234"
             className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 placeholder-gray-400 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent font-mono" />
-          <p className="text-gray-400 text-xs">12-digit UTR / transaction ID from your UPI app.</p>
         </div>
       )}
-
       {proofType === 'screenshot' && (
         <div className="space-y-2">
-          <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">
-            Payment Screenshot *
-          </label>
+          <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">Payment Screenshot *</label>
           <div onClick={() => fileRef.current?.click()}
-            className={`cursor-pointer border-2 border-dashed rounded-xl p-5 flex flex-col items-center gap-2 transition-colors ${screenshotFile ? 'border-green-400 bg-green-50 dark:bg-green-500/5' : 'border-gray-200 dark:border-white/10 hover:border-accent/40 bg-gray-50 dark:bg-zinc-800'}`}>
+            className={`cursor-pointer border-2 border-dashed rounded-xl p-5 flex flex-col items-center gap-2 ${screenshotFile ? 'border-green-400 bg-green-50 dark:bg-green-500/5' : 'border-gray-200 dark:border-white/10 hover:border-accent/40 bg-gray-50 dark:bg-zinc-800'}`}>
             {screenshotFile ? (
-              <>
-                <CheckCircle2 className="w-6 h-6 text-green-500" />
-                <p className="text-green-700 dark:text-green-400 text-sm font-semibold">{screenshotFile.name}</p>
-                <p className="text-gray-400 text-xs">{(screenshotFile.size / 1024).toFixed(0)} KB — click to change</p>
-              </>
+              <><CheckCircle2 className="w-6 h-6 text-green-500" /><p className="text-green-700 dark:text-green-400 text-sm font-semibold">{screenshotFile.name}</p></>
             ) : (
-              <>
-                <Upload className="w-6 h-6 text-gray-400" />
-                <p className="text-gray-600 dark:text-zinc-300 text-sm font-semibold">Click to upload screenshot</p>
-                <p className="text-gray-400 text-xs">JPG, PNG or WebP · Max 5MB</p>
-              </>
+              <><Upload className="w-6 h-6 text-gray-400" /><p className="text-gray-600 dark:text-zinc-300 text-sm font-semibold">Click to upload screenshot</p><p className="text-gray-400 text-xs">JPG, PNG or WebP · Max 5MB</p></>
             )}
           </div>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
             onChange={e => setScreenshotFile(e.target.files?.[0] || null)} />
         </div>
       )}
-
       {proofType === 'none' && (
         <div className="bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/25 rounded-xl px-4 py-3 flex items-start gap-3">
           <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
           <div>
             <p className="text-yellow-700 dark:text-yellow-400 text-sm font-semibold">Manual Verification</p>
-            <p className="text-yellow-600 dark:text-yellow-500 text-xs mt-0.5">
-              Without a UTR or screenshot, our team will verify your payment manually.
-              This may delay order processing by up to <strong>24 hours</strong>.
-            </p>
+            <p className="text-yellow-600 dark:text-yellow-500 text-xs mt-0.5">Without a UTR or screenshot, our team will verify manually. This may delay order processing by up to <strong>24 hours</strong>.</p>
           </div>
         </div>
       )}
@@ -518,54 +500,22 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
   );
 };
 
-// ── Direct UPI Panel ──────────────────────────────────────────────────────────
-
-const DirectUPIPanel = ({
-  subtotal, couponPct,
-  paymentPlan, setPaymentPlan,
-  proofType, setProofType,
-  utrNumber, setUtrNumber,
-  screenshotFile, setScreenshotFile,
-  onConfirm, confirming,
-}) => {
+const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proofType, setProofType, utrNumber, setUtrNumber, screenshotFile, setScreenshotFile, onConfirm, confirming }) => {
   const [copied, setCopied] = useState(false);
   const upiDiscPct = paymentPlan === 'full' ? 0.01 : 0;
-
-  const { prepaidDisc, taxableAmount, gst, shipping, grandTotal } =
-    calcGST(subtotal, couponPct, upiDiscPct);
-
-  const payableNow = paymentPlan === 'advance'
-    ? Math.round((taxableAmount * 0.10 + shipping) * 100) / 100
-    : grandTotal;
-
-  const balanceDue = paymentPlan === 'advance'
-    ? Math.round((taxableAmount - taxableAmount * 0.10) * 100) / 100
-    : 0;
-
-  const upiUri   = buildUpiUri(payableNow, `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
-  const isMobile = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
-
-  const handleCopyUpi = () => {
-    navigator.clipboard.writeText(UPI_ID);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const canConfirm = () => {
-    if (proofType === 'utr')        return !!utrNumber.trim();
-    if (proofType === 'screenshot') return !!screenshotFile;
-    return true;
-  };
+  const { prepaidDisc, taxableAmount, gst, shipping, grandTotal } = calcGST(subtotal, couponPct, upiDiscPct);
+  const payableNow = paymentPlan === 'advance' ? Math.round((taxableAmount * 0.10 + shipping) * 100) / 100 : grandTotal;
+  const balanceDue = paymentPlan === 'advance' ? Math.round((taxableAmount - taxableAmount * 0.10) * 100) / 100 : 0;
+  const upiUri     = buildUpiUri(payableNow, `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
+  const isMobile   = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+  const canConfirm = () => { if (proofType === 'utr') return !!utrNumber.trim(); if (proofType === 'screenshot') return !!screenshotFile; return true; };
 
   return (
     <div className="space-y-5">
       <div>
         <p className="text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest mb-3">Choose Payment Plan</p>
         <div className="grid grid-cols-2 gap-3">
-          {[
-            { value: 'advance', label: '10% Advance', sub: 'Pay 10% + shipping now, rest on delivery' },
-            { value: 'full',    label: 'Full Payment', sub: 'Extra 1% prepaid discount'               },
-          ].map(opt => (
+          {[{ value: 'advance', label: '10% Advance', sub: 'Pay 10% + shipping now, rest on delivery' }, { value: 'full', label: 'Full Payment', sub: 'Extra 1% prepaid discount' }].map(opt => (
             <label key={opt.value} onClick={() => setPaymentPlan(opt.value)}
               className={`cursor-pointer rounded-xl border p-3.5 transition-all ${paymentPlan === opt.value ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300'}`}>
               <div className="flex items-center gap-2 mb-1">
@@ -581,35 +531,12 @@ const DirectUPIPanel = ({
       </div>
 
       <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 space-y-2 text-sm border border-gray-100 dark:border-white/5">
-        {prepaidDisc > 0 && (
-          <div className="flex justify-between text-green-600 font-semibold">
-            <span>Prepaid Discount (1%)</span><span>−₹{fmt(prepaidDisc)}</span>
-          </div>
-        )}
-        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-          <span>Taxable Amount</span><span>₹{fmt(taxableAmount)}</span>
-        </div>
-        <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-          <span>GST 5%</span><span>₹{fmt(gst)}</span>
-        </div>
-        {shipping > 0 ? (
-          <div className="flex justify-between text-orange-600 font-semibold">
-            <span>Shipping</span><span>+₹{fmt(shipping)}</span>
-          </div>
-        ) : (
-          <div className="flex justify-between text-green-600 font-semibold">
-            <span>Shipping</span><span>FREE</span>
-          </div>
-        )}
-        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2">
-          <span className="font-semibold">Order Total</span>
-          <span className="font-bold">₹{fmt(grandTotal)}</span>
-        </div>
-        {paymentPlan === 'advance' && (
-          <div className="flex justify-between text-gray-500 dark:text-zinc-400">
-            <span>Balance Due Later</span><span>₹{fmt(balanceDue)}</span>
-          </div>
-        )}
+        {prepaidDisc > 0 && <div className="flex justify-between text-green-600 font-semibold"><span>Prepaid Discount (1%)</span><span>−₹{fmt(prepaidDisc)}</span></div>}
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>Taxable Amount</span><span>₹{fmt(taxableAmount)}</span></div>
+        <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>GST 5%</span><span>₹{fmt(gst)}</span></div>
+        {shipping > 0 ? <div className="flex justify-between text-orange-600 font-semibold"><span>Shipping</span><span>+₹{fmt(shipping)}</span></div> : <div className="flex justify-between text-green-600 font-semibold"><span>Shipping</span><span>FREE</span></div>}
+        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2"><span className="font-semibold">Order Total</span><span className="font-bold">₹{fmt(grandTotal)}</span></div>
+        {paymentPlan === 'advance' && <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>Balance Due Later</span><span>₹{fmt(balanceDue)}</span></div>}
         <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-lg px-3 py-2 mt-1">
           <span className="text-accent font-bold text-sm uppercase tracking-widest">Pay Now</span>
           <span className="text-gray-900 dark:text-zinc-100 font-black text-lg">₹{fmt(payableNow)}</span>
@@ -626,7 +553,8 @@ const DirectUPIPanel = ({
             <p className="text-gray-400 text-[10px] uppercase tracking-widest">UPI ID</p>
             <p className="text-gray-900 dark:text-zinc-100 font-mono font-bold text-sm">{UPI_ID}</p>
           </div>
-          <button onClick={handleCopyUpi} className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-red-700 transition-colors">
+          <button onClick={() => { navigator.clipboard.writeText(UPI_ID); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+            className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:text-red-700 transition-colors">
             {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
           </button>
         </div>
@@ -639,43 +567,38 @@ const DirectUPIPanel = ({
         )}
       </div>
 
-      <ProofSelector
-        proofType={proofType} setProofType={setProofType}
-        utrNumber={utrNumber} setUtrNumber={setUtrNumber}
-        screenshotFile={screenshotFile} setScreenshotFile={setScreenshotFile}
-      />
+      <ProofSelector proofType={proofType} setProofType={setProofType} utrNumber={utrNumber} setUtrNumber={setUtrNumber} screenshotFile={screenshotFile} setScreenshotFile={setScreenshotFile} />
 
       <button onClick={onConfirm} disabled={confirming || !canConfirm()}
         className="w-full flex items-center justify-center gap-2.5 bg-accent hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-6 py-3.5 rounded-xl transition-colors text-sm">
         {confirming ? <><Loader className="animate-spin w-4 h-4" /> Confirming…</> : <><PackageCheck className="w-4 h-4" /> Confirm Order</>}
       </button>
-      {proofType === 'none' && (
-        <p className="text-yellow-600 dark:text-yellow-500 text-xs text-center">
-          ⏳ No proof submitted — verification may take up to 24 hours.
-        </p>
-      )}
+      {proofType === 'none' && <p className="text-yellow-600 dark:text-yellow-500 text-xs text-center">⏳ No proof submitted — verification may take up to 24 hours.</p>}
     </div>
   );
 };
 
-// ── Checkout Panel ────────────────────────────────────────────────────────────
-
 const CheckoutPanel = ({
-  items, addresses, shippingId, billingId,
+  items, addresses, setAddresses, shippingId, billingId,
   onShippingSelect, onBillingSelect,
   couponData, onCouponApply, onCouponRemove, availableCoupons,
-  paymentPlan, setPaymentPlan,
-  proofType, setProofType,
-  utrNumber, setUtrNumber,
-  screenshotFile, setScreenshotFile,
-  onUpiConfirm, upiConfirming,
-  onRazorpayCheckout, razorpayChecking,
+  paymentPlan, setPaymentPlan, proofType, setProofType,
+  utrNumber, setUtrNumber, screenshotFile, setScreenshotFile,
+  onUpiConfirm, upiConfirming, onRazorpayCheckout, razorpayChecking,
 }) => {
-  const [activeMethod, setActiveMethod] = useState('upi');
+  const [activeMethod, setActiveMethod]   = useState('upi');
+  const [editingAddress, setEditingAddress] = useState(null);
+
   const subtotal   = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
   const couponPct  = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
   const upiDiscPct = activeMethod === 'upi' && paymentPlan === 'full' ? 0.01 : 0;
   const { grandTotal } = calcGST(subtotal, couponPct, upiDiscPct);
+
+  const handleAddressSaved = async () => {
+    setEditingAddress(null);
+    const res = await api.get('accounts/addresses/');
+    setAddresses(res.data ?? []);
+  };
 
   return (
     <div className="flex flex-col xl:flex-row gap-8 items-start">
@@ -685,23 +608,20 @@ const CheckoutPanel = ({
           <div className="flex items-center gap-2 mb-4"><Truck className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Shipping Address</h2></div>
           {addresses.length === 0
             ? <p className="text-gray-500 text-sm">No addresses saved. <a href="/dashboard" className="text-accent underline">Add one.</a></p>
-            : <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{addresses.map(a => <AddressCard key={a.id} addr={a} type="shipping" selected={shippingId === a.id} onSelect={onShippingSelect} />)}</div>}
+            : <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{addresses.map(a => <AddressCard key={a.id} addr={a} type="shipping" selected={shippingId === a.id} onSelect={onShippingSelect} onEdit={setEditingAddress} />)}</div>}
         </div>
 
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-4"><Building className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Billing Address</h2></div>
           {addresses.length === 0
             ? <p className="text-gray-500 text-sm">No addresses saved.</p>
-            : <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{addresses.map(a => <AddressCard key={a.id} addr={a} type="billing" selected={billingId === a.id} onSelect={onBillingSelect} />)}</div>}
+            : <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{addresses.map(a => <AddressCard key={a.id} addr={a} type="billing" selected={billingId === a.id} onSelect={onBillingSelect} onEdit={setEditingAddress} />)}</div>}
         </div>
 
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5"><ShieldCheck className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Payment Method</h2></div>
           <div className="flex gap-3 mb-6">
-            {[
-              { key: 'upi',      label: 'Direct UPI', sub: 'Zero fees · Instant'     },
-              { key: 'razorpay', label: 'Razorpay',   sub: 'Card / UPI / NetBanking' },
-            ].map(m => (
+            {[{ key: 'upi', label: 'Direct UPI', sub: 'Zero fees · Instant' }, { key: 'razorpay', label: 'Razorpay', sub: 'Card / UPI / NetBanking' }].map(m => (
               <button key={m.key} onClick={() => setActiveMethod(m.key)}
                 className={`flex-1 rounded-xl border p-3 text-left transition-all ${activeMethod === m.key ? 'border-accent bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-800 hover:border-gray-300'}`}>
                 <p className={`text-sm font-bold ${activeMethod === m.key ? 'text-accent' : 'text-gray-900 dark:text-zinc-100'}`}>{m.label}</p>
@@ -709,18 +629,11 @@ const CheckoutPanel = ({
               </button>
             ))}
           </div>
-
           {activeMethod === 'upi' && (
-            <DirectUPIPanel
-              subtotal={subtotal} couponPct={couponPct}
-              paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan}
-              proofType={proofType} setProofType={setProofType}
-              utrNumber={utrNumber} setUtrNumber={setUtrNumber}
-              screenshotFile={screenshotFile} setScreenshotFile={setScreenshotFile}
-              onConfirm={onUpiConfirm} confirming={upiConfirming}
-            />
+            <DirectUPIPanel subtotal={subtotal} couponPct={couponPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan}
+              proofType={proofType} setProofType={setProofType} utrNumber={utrNumber} setUtrNumber={setUtrNumber}
+              screenshotFile={screenshotFile} setScreenshotFile={setScreenshotFile} onConfirm={onUpiConfirm} confirming={upiConfirming} />
           )}
-
           {activeMethod === 'razorpay' && (
             <div className="space-y-4">
               <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-xl px-4 py-3 text-blue-700 dark:text-blue-400 text-sm">
@@ -736,21 +649,20 @@ const CheckoutPanel = ({
       </div>
 
       <div className="w-full xl:w-80 shrink-0">
-        <OrderSummaryCard
-          items={items} couponData={couponData} upiDiscPct={upiDiscPct}
-          availableCoupons={availableCoupons}
-          onCouponApply={onCouponApply} onCouponRemove={onCouponRemove}
-        />
+        <OrderSummaryCard items={items} couponData={couponData} upiDiscPct={upiDiscPct}
+          availableCoupons={availableCoupons} onCouponApply={onCouponApply} onCouponRemove={onCouponRemove} />
       </div>
+
+      {editingAddress && (
+        <AddressEditModal address={editingAddress} onClose={() => setEditingAddress(null)} onSaved={handleAddressSaved} />
+      )}
     </div>
   );
 };
 
-// ── Main Cart ─────────────────────────────────────────────────────────────────
-
 const Cart = () => {
-  const navigate   = useNavigate();
-  const fetchCart  = useCartStore((s) => s.fetchCart);
+  const navigate  = useNavigate();
+  const fetchCart = useCartStore((s) => s.fetchCart);
 
   const [items, setItems]                       = useState([]);
   const [addresses, setAddresses]               = useState([]);
@@ -782,25 +694,17 @@ const Cart = () => {
       setItems(cartRes.data?.items ?? []);
       setAddresses(addrRes.data ?? []);
       setAvailableCoupons(couponRes.data?.results ?? couponRes.data ?? []);
-      const addrs   = addrRes.data ?? [];
-      const defShip = addrs.find(a => a.is_default_shipping);
-      const defBill = addrs.find(a => a.is_default_billing);
-      if (defShip) setShippingId(defShip.id);
-      if (defBill) setBillingId(defBill.id);
+      const addrs = addrRes.data ?? [];
+      if (addrs.find(a => a.is_default_shipping)) setShippingId(addrs.find(a => a.is_default_shipping).id);
+      if (addrs.find(a => a.is_default_billing))  setBillingId(addrs.find(a => a.is_default_billing).id);
     }).catch(() => showToast('Failed to load cart.', 'error'))
       .finally(() => setLoading(false));
   }, [showToast]);
 
   const handleQtyChange = useCallback((cartItemId, newQty) => {
-    if (newQty <= 0) {
-      setItems(prev => prev.filter(i => i.id !== cartItemId));
-      scheduleUpdate(cartItemId, 0);
-      setCouponData(null);
-      return;
-    }
+    if (newQty <= 0) { setItems(prev => prev.filter(i => i.id !== cartItemId)); scheduleUpdate(cartItemId, 0); setCouponData(null); return; }
     setItems(prev => prev.map(i => i.id === cartItemId ? { ...i, quantity: newQty } : i));
-    scheduleUpdate(cartItemId, newQty);
-    setCouponData(null);
+    scheduleUpdate(cartItemId, newQty); setCouponData(null);
   }, [scheduleUpdate]);
 
   const handleUpiConfirm = async () => {
@@ -809,26 +713,18 @@ const Cart = () => {
     setUpiConfirming(true);
     try {
       const formData = new FormData();
-      formData.append('payment_plan',        paymentPlan);
-      formData.append('proof_type',          proofType);
-      formData.append('shipping_address_id', shippingId);
-      formData.append('billing_address_id',  billingId);
-      formData.append('coupon_code',         couponData?.coupon_code || '');
-      if (proofType === 'utr')                         formData.append('utr_number', utrNumber.trim());
+      formData.append('payment_plan', paymentPlan); formData.append('proof_type', proofType);
+      formData.append('shipping_address_id', shippingId); formData.append('billing_address_id', billingId);
+      formData.append('coupon_code', couponData?.coupon_code || '');
+      if (proofType === 'utr') formData.append('utr_number', utrNumber.trim());
       if (proofType === 'screenshot' && screenshotFile) formData.append('payment_screenshot', screenshotFile);
-
-      const res = await api.post('orders/upi/checkout/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
+      const res = await api.post('orders/upi/checkout/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setItems([]); setCouponData(null); setUtrNumber(''); setScreenshotFile(null);
-      fetchCart();
-      setSuccess(true);
+      fetchCart(); setSuccess(true);
       setSuccessMsg(res.data.message || `Order #${res.data.order_id} placed successfully!`);
       setTimeout(() => navigate('/history'), 3500);
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Order failed. Please try again.', 'error');
-    } finally { setUpiConfirming(false); }
+    } catch (err) { showToast(err.response?.data?.error || 'Order failed. Please try again.', 'error'); }
+    finally { setUpiConfirming(false); }
   };
 
   const handleRazorpayCheckout = async () => {
@@ -839,39 +735,22 @@ const Cart = () => {
     if (!scriptLoaded) { showToast('Failed to load payment gateway.', 'error'); setRazorpayChecking(false); return; }
     let orderData;
     try {
-      const res = await api.post('orders/razorpay/create/', {
-        shipping_address_id: shippingId,
-        billing_address_id:  billingId,
-        coupon_code:         couponData?.coupon_code || '',
-      });
+      const res = await api.post('orders/razorpay/create/', { shipping_address_id: shippingId, billing_address_id: billingId, coupon_code: couponData?.coupon_code || '' });
       orderData = res.data;
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Failed to initiate payment.', 'error');
-      setRazorpayChecking(false);
-      return;
-    }
+    } catch (err) { showToast(err.response?.data?.error || 'Failed to initiate payment.', 'error'); setRazorpayChecking(false); return; }
 
     const options = {
       key: orderData.key_id, amount: orderData.amount, currency: orderData.currency,
-      name: 'Pronoun Jeans', description: 'B2B Wholesale Order',
-      order_id: orderData.razorpay_order_id,
+      name: 'Pronoun Jeans', description: 'B2B Wholesale Order', order_id: orderData.razorpay_order_id,
       prefill: { name: orderData.name, email: orderData.email, contact: orderData.contact },
       theme: { color: '#dc2626' },
       handler: async (response) => {
         try {
-          await api.post('orders/razorpay/verify/', {
-            razorpay_order_id:   response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature:  response.razorpay_signature,
-          });
-          setItems([]); setCouponData(null);
-          fetchCart();
-          setSuccess(true);
-          setSuccessMsg('Payment successful! Order confirmed.');
+          await api.post('orders/razorpay/verify/', { razorpay_order_id: response.razorpay_order_id, razorpay_payment_id: response.razorpay_payment_id, razorpay_signature: response.razorpay_signature });
+          setItems([]); setCouponData(null); fetchCart(); setSuccess(true); setSuccessMsg('Payment successful! Order confirmed.');
           setTimeout(() => navigate('/history'), 2400);
-        } catch (err) {
-          showToast(err.response?.data?.error || 'Verification failed.', 'error');
-        } finally { setRazorpayChecking(false); }
+        } catch (err) { showToast(err.response?.data?.error || 'Verification failed.', 'error'); }
+        finally { setRazorpayChecking(false); }
       },
       modal: { ondismiss: () => { showToast('Payment cancelled.', 'error'); setRazorpayChecking(false); } },
     };
@@ -903,28 +782,17 @@ const Cart = () => {
             <Loader className="animate-spin text-accent w-5 h-5 mt-1" />
           </div>
         )}
-
-        {!success && loading && (
-          <div className="flex items-center justify-center py-28">
-            <Loader className="animate-spin text-accent w-9 h-9" />
-          </div>
-        )}
-
+        {!success && loading && <div className="flex items-center justify-center py-28"><Loader className="animate-spin text-accent w-9 h-9" /></div>}
         {!success && !loading && items.length === 0 && (
           <div className="flex flex-col items-center justify-center py-28 gap-4">
-            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center">
-              <ShoppingCart className="w-9 h-9 text-gray-400" />
-            </div>
+            <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center"><ShoppingCart className="w-9 h-9 text-gray-400" /></div>
             <p className="text-gray-900 dark:text-zinc-100 text-xl font-bold">Your cart is empty</p>
-            <button onClick={() => navigate('/catalog')} className="mt-2 bg-accent hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm">
-              Browse Catalog
-            </button>
+            <button onClick={() => navigate('/catalog')} className="mt-2 bg-accent hover:bg-red-700 text-white font-bold px-6 py-2.5 rounded-xl text-sm">Browse Catalog</button>
           </div>
         )}
 
         {!success && !loading && items.length > 0 && (
           <div className="space-y-8">
-            {/* Desktop table */}
             <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-sm">
               <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5">
                 <h2 className="text-gray-900 dark:text-zinc-100 font-bold text-lg">Cart Items</h2>
@@ -943,35 +811,23 @@ const Cart = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item, idx) => (
-                      <CartRow key={item.id} item={item} index={idx} onQtyChange={handleQtyChange} saving={saving} />
-                    ))}
+                    {items.map((item, idx) => <CartRow key={item.id} item={item} index={idx} onQtyChange={handleQtyChange} saving={saving} />)}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* Mobile cards */}
             <div className="md:hidden space-y-3">
               {items.map(item => {
                 const thumb = item.variation?.image || item.variation?.product_image || null;
                 return (
                   <div key={item.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-4 shadow-sm">
                     <div className="flex gap-3 mb-3">
-                      {thumb ? (
-                        <img src={thumb} alt={item.variation?.product_name || ''}
-                          className="w-16 h-16 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center">
-                          <ShoppingCart className="w-5 h-5 text-gray-300 dark:text-zinc-600" />
-                        </div>
-                      )}
+                      {thumb ? <img src={thumb} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" /> : <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center"><ShoppingCart className="w-5 h-5 text-gray-300" /></div>}
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-start">
-                          <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug">{item.variation?.product_name}</p>
-                          <button onClick={() => handleQtyChange(item.id, 0)} className="text-gray-400 hover:text-red-500 ml-2 shrink-0">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">{item.variation?.product_name}</p>
+                          <button onClick={() => handleQtyChange(item.id, 0)} className="text-gray-400 hover:text-red-500 ml-2"><Trash2 className="w-4 h-4" /></button>
                         </div>
                         <p className="text-gray-400 text-xs font-mono mt-0.5">{item.variation?.sku}</p>
                         <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
@@ -985,9 +841,7 @@ const Cart = () => {
                         onDecrement={() => handleQtyChange(item.id, item.quantity - 1)}
                         onIncrement={() => handleQtyChange(item.id, item.quantity + 1)}
                         onDirectChange={(v) => handleQtyChange(item.id, v)} />
-                      <span className="text-gray-900 dark:text-zinc-100 font-bold">
-                        ₹{(parseFloat(item.variation?.b2b_price ?? 0) * item.quantity).toFixed(2)}
-                      </span>
+                      <span className="text-gray-900 dark:text-zinc-100 font-bold">₹{(parseFloat(item.variation?.b2b_price ?? 0) * item.quantity).toFixed(2)}</span>
                     </div>
                   </div>
                 );
@@ -995,7 +849,7 @@ const Cart = () => {
             </div>
 
             <CheckoutPanel
-              items={items} addresses={addresses}
+              items={items} addresses={addresses} setAddresses={setAddresses}
               shippingId={shippingId} billingId={billingId}
               onShippingSelect={setShippingId} onBillingSelect={setBillingId}
               couponData={couponData} onCouponApply={setCouponData} onCouponRemove={() => setCouponData(null)}
@@ -1010,7 +864,6 @@ const Cart = () => {
           </div>
         )}
       </div>
-
       {toast && <Toast message={toast.message} type={toast.type} onDone={clearToast} />}
       <style>{`@keyframes slideUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }`}</style>
     </div>

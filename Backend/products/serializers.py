@@ -15,7 +15,6 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 
 class ProductVariationSerializer(serializers.ModelSerializer):
-    # Alias — frontend uses set_price, DB stores b2b_price
     set_price         = serializers.DecimalField(source='b2b_price', max_digits=10, decimal_places=2, read_only=True)
     margin_percentage = serializers.SerializerMethodField()
     color_name        = serializers.SerializerMethodField()
@@ -26,19 +25,17 @@ class ProductVariationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'size', 'color', 'color_name', 'color_hex',
             'sku',
-            # Pricing
-            'set_price',        # alias of b2b_price — total set price
-            'b2b_price',        # kept for cart/order backward compatibility
-            'per_piece_price',  # wholesale price per piece
-            'mrp',              # MRP for full set
-            'mrp_per_piece',    # MRP per individual piece
+            'set_price',
+            'b2b_price',
+            'per_piece_price',
+            'mrp',
+            'mrp_per_piece',
             'margin_percentage',
+            'set_breakdown',        # Feature 1: size breakdown tooltip
             'stock_quantity', 'image',
         ]
 
     def get_margin_percentage(self, obj):
-        """Margin based on per_piece_price vs mrp_per_piece when available,
-        otherwise falls back to set_price vs mrp."""
         try:
             if obj.per_piece_price and obj.mrp_per_piece and obj.mrp_per_piece > 0:
                 margin = ((obj.mrp_per_piece - obj.per_piece_price) / obj.mrp_per_piece) * 100
