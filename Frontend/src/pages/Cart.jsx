@@ -6,7 +6,7 @@ import {
   Tag, ReceiptText, Plus, Minus, Trash2,
   Truck, CreditCard, Building, ShieldCheck, Smartphone,
   X, Lock, Unlock, ChevronDown, ChevronUp, Copy, Check,
-  Upload, Hash, Clock, Pencil, Info,
+  Upload, Hash, Clock, Pencil,
 } from 'lucide-react';
 import api from '../api/axios';
 import { useCartStore } from '../store/useCartStore';
@@ -15,9 +15,8 @@ const UPI_ID        = 'pronoun@kotak';
 const BUSINESS_NAME = 'Pronoun Jeans';
 const SHIPPING_FEE  = 300;
 const FREE_SHIPPING_THRESHOLD = 15000;
-
-const SELLER_GSTIN = '24AEXPJ4984P1ZD';
-const SELLER_NAME  = 'M. SANKLECHA CREATION';
+const SELLER_GSTIN  = '24AEXPJ4984P1ZD';
+const SELLER_NAME   = 'M. SANKLECHA CREATION';
 
 const loadRazorpayScript = () =>
   new Promise((resolve) => {
@@ -29,19 +28,28 @@ const loadRazorpayScript = () =>
     document.body.appendChild(s);
   });
 
+// ── GST Math ──────────────────────────────────────────────────────────────────
+// productTotal  = sum of inclusive prices
+// base          = productTotal × 0.95       (GST-exclusive portion)
+// couponDisc    = base × couponPct          (on base)
+// prepaidDisc   = base × upiDiscPct         (on base — same rule as coupon)
+// taxableAmount = productTotal - couponDisc - prepaidDisc
+// gst           = taxableAmount × 5/105     (extract 5% from inclusive taxable)
+// shipping      = 300 if taxableAmount < 15000 else 0
+// grandTotal    = taxableAmount + shipping
+
 const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
-  const r2           = (n) => Math.round(n * 100) / 100;
+  const r2          = (n) => Math.round(n * 100) / 100;
   const productTotal = r2(subtotal);
   const base         = r2(productTotal * 0.95);
   const couponDisc   = r2(base * couponPct);
-  const afterCoupon  = r2(productTotal - couponDisc);
-  const prepaidDisc  = r2(afterCoupon * upiDiscPct);
-  const taxableAmount = r2(afterCoupon - prepaidDisc);
+  const prepaidDisc  = r2(base * upiDiscPct);
+  const totalDisc    = r2(couponDisc + prepaidDisc);
+  const taxableAmount = r2(productTotal - totalDisc);
   const gst          = r2(taxableAmount * 5 / 105);
   const shipping     = taxableAmount < FREE_SHIPPING_THRESHOLD ? SHIPPING_FEE : 0;
   const grandTotal   = r2(taxableAmount + shipping);
-  const totalDisc    = r2(couponDisc + prepaidDisc);
-  return { productTotal, couponDisc, prepaidDisc, taxableAmount, gst, shipping, grandTotal, totalDisc, base };
+  return { productTotal, base, couponDisc, prepaidDisc, totalDisc, taxableAmount, gst, shipping, grandTotal };
 };
 
 const fmt         = (n) => parseFloat(n || 0).toFixed(2);
@@ -136,8 +144,7 @@ const CartRow = ({ item, index, onQtyChange, saving }) => {
       <td className="px-6 py-4">
         <div className="flex items-center gap-3">
           {thumb ? (
-            <img src={thumb} alt={variation?.product_name || ''}
-              className="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" />
+            <img src={thumb} alt={variation?.product_name || ''} className="w-14 h-14 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" />
           ) : (
             <div className="w-14 h-14 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center">
               <ShoppingCart className="w-5 h-5 text-gray-300 dark:text-zinc-600" />
@@ -170,17 +177,17 @@ const CartRow = ({ item, index, onQtyChange, saving }) => {
   );
 };
 
-// ── Address Edit Modal ────────────────────────────────────────────────────────
+// ── Address Form (inline, used for both Add and Edit) ─────────────────────────
 
 const EMPTY_ADDR = {
   address_line_1: '', address_line_2: '', city: '', state: '',
   pincode: '', is_default_shipping: false, is_default_billing: false,
 };
 
-const AddressEditModal = ({ address, onClose, onSaved }) => {
-  const [form, setForm]         = useState({ ...EMPTY_ADDR, ...address });
-  const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState('');
+const AddressForm = ({ initial = EMPTY_ADDR, editId = null, onSaved, onCancel }) => {
+  const [form, setForm]     = useState({ ...EMPTY_ADDR, ...initial });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
 
   const handleSave = async () => {
     if (!form.address_line_1 || !form.city || !form.state || !form.pincode) {
@@ -188,7 +195,8 @@ const AddressEditModal = ({ address, onClose, onSaved }) => {
     }
     setSaving(true); setError('');
     try {
-      await api.put(`accounts/addresses/${address.id}/`, form);
+      if (editId) await api.put(`accounts/addresses/${editId}/`, form);
+      else        await api.post('accounts/addresses/', form);
       onSaved();
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save address.');
@@ -196,46 +204,46 @@ const AddressEditModal = ({ address, onClose, onSaved }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 shadow-xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-gray-900 dark:text-zinc-100 font-bold">Edit Address</h3>
-          <button onClick={onClose}><X className="w-4 h-4 text-gray-400 hover:text-gray-700 dark:hover:text-white" /></button>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[
-            { label: 'Address Line 1 *', key: 'address_line_1' },
-            { label: 'Address Line 2',   key: 'address_line_2' },
-            { label: 'City *',           key: 'city'           },
-            { label: 'State *',          key: 'state'          },
-            { label: 'Pincode *',        key: 'pincode'        },
-          ].map(({ label, key }) => (
-            <div key={key}>
-              <label className="text-gray-500 dark:text-zinc-400 text-xs font-bold uppercase tracking-widest block mb-1">{label}</label>
-              <input value={form[key] || ''} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
-                className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-accent transition-colors" />
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-gray-600 dark:text-zinc-300 text-sm cursor-pointer">
-            <input type="checkbox" checked={form.is_default_shipping} onChange={e => setForm(p => ({ ...p, is_default_shipping: e.target.checked }))} className="accent-accent" />
-            <Truck className="w-3.5 h-3.5 text-accent" /> Default Shipping
-          </label>
-          <label className="flex items-center gap-2 text-gray-600 dark:text-zinc-300 text-sm cursor-pointer">
-            <input type="checkbox" checked={form.is_default_billing} onChange={e => setForm(p => ({ ...p, is_default_billing: e.target.checked }))} className="accent-accent" />
-            <CreditCard className="w-3.5 h-3.5 text-accent" /> Default Billing
-          </label>
-        </div>
-        {error && <p className="text-red-500 text-xs">{error}</p>}
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-300 font-bold py-2.5 rounded-xl text-sm">Cancel</button>
-          <button onClick={handleSave} disabled={saving}
-            className="flex-1 flex items-center justify-center gap-2 bg-accent hover:bg-red-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm">
-            {saving ? <Loader className="animate-spin w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-accent/30 p-5 space-y-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h3 className="text-gray-900 dark:text-zinc-100 font-bold text-sm">{editId ? 'Edit Address' : 'Add New Address'}</h3>
+        <button onClick={onCancel}><X className="w-4 h-4 text-gray-400 hover:text-gray-700 dark:hover:text-white" /></button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {[
+          { label: 'Address Line 1 *', key: 'address_line_1' },
+          { label: 'Address Line 2',   key: 'address_line_2' },
+          { label: 'City *',           key: 'city'           },
+          { label: 'State *',          key: 'state'          },
+          { label: 'Pincode *',        key: 'pincode'        },
+        ].map(({ label, key }) => (
+          <div key={key}>
+            <label className="text-gray-500 dark:text-zinc-400 text-xs font-bold uppercase tracking-widest block mb-1">{label}</label>
+            <input value={form[key] || ''} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+              className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-accent transition-colors" />
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-4">
+        <label className="flex items-center gap-2 text-gray-600 dark:text-zinc-300 text-sm cursor-pointer">
+          <input type="checkbox" checked={form.is_default_shipping} onChange={e => setForm(p => ({ ...p, is_default_shipping: e.target.checked }))} className="accent-accent" />
+          <Truck className="w-3.5 h-3.5 text-accent" /> Default Shipping
+        </label>
+        <label className="flex items-center gap-2 text-gray-600 dark:text-zinc-300 text-sm cursor-pointer">
+          <input type="checkbox" checked={form.is_default_billing} onChange={e => setForm(p => ({ ...p, is_default_billing: e.target.checked }))} className="accent-accent" />
+          <CreditCard className="w-3.5 h-3.5 text-accent" /> Default Billing
+        </label>
+      </div>
+      {error && <p className="text-red-500 text-xs">{error}</p>}
+      <div className="flex gap-3">
+        <button onClick={onCancel} className="flex-1 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-300 font-bold py-2.5 rounded-xl text-sm transition-colors hover:bg-gray-50 dark:hover:bg-zinc-800">
+          Cancel
+        </button>
+        <button onClick={handleSave} disabled={saving}
+          className="flex-1 flex items-center justify-center gap-2 bg-accent hover:bg-red-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
+          {saving ? <Loader className="animate-spin w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+          {saving ? 'Saving...' : 'Save Address'}
+        </button>
       </div>
     </div>
   );
@@ -265,6 +273,62 @@ const AddressCard = ({ addr, selected, onSelect, type, onEdit }) => {
         className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-accent transition-colors font-semibold">
         <Pencil className="w-3 h-3" /> Edit
       </button>
+    </div>
+  );
+};
+
+// ── Address Section (with Add + Edit inline) ──────────────────────────────────
+
+const AddressSection = ({ type, addresses, selectedId, onSelect, onAddressesUpdated }) => {
+  const Icon = type === 'shipping' ? Truck : Building;
+  const label = type === 'shipping' ? 'Shipping Address' : 'Billing Address';
+  const [showForm, setShowForm]   = useState(false);
+  const [editAddr, setEditAddr]   = useState(null);   // null = add mode, object = edit mode
+
+  const openAdd  = () => { setEditAddr(null); setShowForm(true); };
+  const openEdit = (addr) => { setEditAddr(addr); setShowForm(true); };
+  const handleSaved = async () => {
+    setShowForm(false); setEditAddr(null);
+    const res = await api.get('accounts/addresses/');
+    onAddressesUpdated(res.data ?? []);
+  };
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Icon className="w-5 h-5 text-accent" />
+          <h2 className="text-gray-900 dark:text-zinc-100 font-bold">{label}</h2>
+        </div>
+        {!showForm && (
+          <button onClick={openAdd}
+            className="flex items-center gap-1.5 text-xs font-bold text-accent hover:text-red-700 border border-accent/30 hover:border-accent px-3 py-1.5 rounded-lg transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Add New
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <AddressForm
+          initial={editAddr || EMPTY_ADDR}
+          editId={editAddr?.id || null}
+          onSaved={handleSaved}
+          onCancel={() => { setShowForm(false); setEditAddr(null); }}
+        />
+      )}
+
+      {!showForm && (
+        addresses.length === 0 ? (
+          <p className="text-gray-500 text-sm">No addresses saved yet. Click "Add New" to add one.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {addresses.map(a => (
+              <AddressCard key={a.id} addr={a} type={type} selected={selectedId === a.id}
+                onSelect={onSelect} onEdit={openEdit} />
+            ))}
+          </div>
+        )
+      )}
     </div>
   );
 };
@@ -369,11 +433,13 @@ const AvailableOffers = ({ coupons, subtotal, appliedCoupon, onApply, onRemove }
   );
 };
 
+// ── Order Summary ─────────────────────────────────────────────────────────────
+
 const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onCouponApply, onCouponRemove }) => {
   const subtotal   = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
   const couponPct  = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
   const totalUnits = items.reduce((s, i) => s + i.quantity, 0);
-  const { productTotal, couponDisc, prepaidDisc, taxableAmount, gst, shipping, grandTotal, totalDisc } =
+  const { productTotal, couponDisc, prepaidDisc, totalDisc, taxableAmount, gst, shipping, grandTotal } =
     calcGST(subtotal, couponPct, upiDiscPct);
 
   if (couponData && couponData.coupon_disc_amount === undefined) couponData.coupon_disc_amount = couponDisc;
@@ -398,7 +464,8 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
 
       <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-3.5 space-y-2.5 text-sm border border-gray-100 dark:border-white/5">
         <div className="flex justify-between text-gray-700 dark:text-zinc-300">
-          <span className="font-semibold">Product Total</span><span className="font-semibold">₹{fmt(productTotal)}</span>
+          <span className="font-semibold">Product Total</span>
+          <span className="font-semibold">₹{fmt(productTotal)}</span>
         </div>
         {couponDisc > 0 && (
           <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
@@ -411,18 +478,21 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
           </div>
         )}
         <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-dashed border-gray-200 dark:border-white/10 pt-2">
-          <span className="font-semibold">Taxable Amount</span><span className="font-semibold">₹{fmt(taxableAmount)}</span>
+          <span className="font-semibold">Taxable Amount</span>
+          <span className="font-semibold">₹{fmt(taxableAmount)}</span>
         </div>
         <div className="flex justify-between text-gray-500 dark:text-zinc-400">
           <span>GST 5%</span><span>₹{fmt(gst)}</span>
         </div>
         {shipping > 0 ? (
           <div className="flex justify-between text-orange-600 dark:text-orange-400 font-semibold">
-            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span><span>+₹{fmt(shipping)}</span>
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
+            <span>+₹{fmt(shipping)}</span>
           </div>
         ) : (
           <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span><span>FREE</span>
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
+            <span>FREE</span>
           </div>
         )}
       </div>
@@ -440,6 +510,8 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
     </div>
   );
 };
+
+// ── Proof Selector ────────────────────────────────────────────────────────────
 
 const PROOF_OPTIONS = [
   { key: 'utr',        icon: Hash,   label: 'Enter UTR',          sub: 'Enter your 12-digit transaction ID'       },
@@ -470,6 +542,7 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
           <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">UPI Transaction Reference (UTR) *</label>
           <input type="text" value={utrNumber} onChange={e => setUtrNumber(e.target.value.trim())} placeholder="e.g. 426813598234"
             className="w-full bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 placeholder-gray-400 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent font-mono" />
+          <p className="text-gray-400 text-xs">12-digit UTR from your UPI app after paying.</p>
         </div>
       )}
       {proofType === 'screenshot' && (
@@ -499,6 +572,8 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
     </div>
   );
 };
+
+// ── Direct UPI Panel ──────────────────────────────────────────────────────────
 
 const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proofType, setProofType, utrNumber, setUtrNumber, screenshotFile, setScreenshotFile, onConfirm, confirming }) => {
   const [copied, setCopied] = useState(false);
@@ -534,8 +609,12 @@ const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proo
         {prepaidDisc > 0 && <div className="flex justify-between text-green-600 font-semibold"><span>Prepaid Discount (1%)</span><span>−₹{fmt(prepaidDisc)}</span></div>}
         <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>Taxable Amount</span><span>₹{fmt(taxableAmount)}</span></div>
         <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>GST 5%</span><span>₹{fmt(gst)}</span></div>
-        {shipping > 0 ? <div className="flex justify-between text-orange-600 font-semibold"><span>Shipping</span><span>+₹{fmt(shipping)}</span></div> : <div className="flex justify-between text-green-600 font-semibold"><span>Shipping</span><span>FREE</span></div>}
-        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2"><span className="font-semibold">Order Total</span><span className="font-bold">₹{fmt(grandTotal)}</span></div>
+        {shipping > 0
+          ? <div className="flex justify-between text-orange-600 font-semibold"><span>Shipping</span><span>+₹{fmt(shipping)}</span></div>
+          : <div className="flex justify-between text-green-600 font-semibold"><span>Shipping</span><span>FREE</span></div>}
+        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2">
+          <span className="font-semibold">Order Total</span><span className="font-bold">₹{fmt(grandTotal)}</span>
+        </div>
         {paymentPlan === 'advance' && <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>Balance Due Later</span><span>₹{fmt(balanceDue)}</span></div>}
         <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-lg px-3 py-2 mt-1">
           <span className="text-accent font-bold text-sm uppercase tracking-widest">Pay Now</span>
@@ -558,13 +637,9 @@ const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proo
             {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
           </button>
         </div>
-        {isMobile ? (
-          <a href={upiUri} className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-3 rounded-xl text-sm">
-            <Smartphone className="w-4 h-4" /> Pay ₹{fmt(payableNow)} via UPI App
-          </a>
-        ) : (
-          <p className="text-gray-400 text-xs text-center">On mobile, tap "Pay via UPI App" to open PhonePe / GPay directly.</p>
-        )}
+        {isMobile
+          ? <a href={upiUri} className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-3 rounded-xl text-sm"><Smartphone className="w-4 h-4" /> Pay ₹{fmt(payableNow)} via UPI App</a>
+          : <p className="text-gray-400 text-xs text-center">On mobile, tap "Pay via UPI App" to open PhonePe / GPay directly.</p>}
       </div>
 
       <ProofSelector proofType={proofType} setProofType={setProofType} utrNumber={utrNumber} setUtrNumber={setUtrNumber} screenshotFile={screenshotFile} setScreenshotFile={setScreenshotFile} />
@@ -578,6 +653,8 @@ const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proo
   );
 };
 
+// ── Checkout Panel ────────────────────────────────────────────────────────────
+
 const CheckoutPanel = ({
   items, addresses, setAddresses, shippingId, billingId,
   onShippingSelect, onBillingSelect,
@@ -586,37 +663,21 @@ const CheckoutPanel = ({
   utrNumber, setUtrNumber, screenshotFile, setScreenshotFile,
   onUpiConfirm, upiConfirming, onRazorpayCheckout, razorpayChecking,
 }) => {
-  const [activeMethod, setActiveMethod]   = useState('upi');
-  const [editingAddress, setEditingAddress] = useState(null);
-
+  const [activeMethod, setActiveMethod] = useState('upi');
   const subtotal   = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
   const couponPct  = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
   const upiDiscPct = activeMethod === 'upi' && paymentPlan === 'full' ? 0.01 : 0;
   const { grandTotal } = calcGST(subtotal, couponPct, upiDiscPct);
 
-  const handleAddressSaved = async () => {
-    setEditingAddress(null);
-    const res = await api.get('accounts/addresses/');
-    setAddresses(res.data ?? []);
-  };
-
   return (
     <div className="flex flex-col xl:flex-row gap-8 items-start">
       <div className="flex-1 min-w-0 space-y-6">
 
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4"><Truck className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Shipping Address</h2></div>
-          {addresses.length === 0
-            ? <p className="text-gray-500 text-sm">No addresses saved. <a href="/dashboard" className="text-accent underline">Add one.</a></p>
-            : <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{addresses.map(a => <AddressCard key={a.id} addr={a} type="shipping" selected={shippingId === a.id} onSelect={onShippingSelect} onEdit={setEditingAddress} />)}</div>}
-        </div>
+        <AddressSection type="shipping" addresses={addresses} selectedId={shippingId}
+          onSelect={onShippingSelect} onAddressesUpdated={setAddresses} />
 
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4"><Building className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Billing Address</h2></div>
-          {addresses.length === 0
-            ? <p className="text-gray-500 text-sm">No addresses saved.</p>
-            : <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{addresses.map(a => <AddressCard key={a.id} addr={a} type="billing" selected={billingId === a.id} onSelect={onBillingSelect} onEdit={setEditingAddress} />)}</div>}
-        </div>
+        <AddressSection type="billing" addresses={addresses} selectedId={billingId}
+          onSelect={onBillingSelect} onAddressesUpdated={setAddresses} />
 
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5"><ShieldCheck className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Payment Method</h2></div>
@@ -652,13 +713,11 @@ const CheckoutPanel = ({
         <OrderSummaryCard items={items} couponData={couponData} upiDiscPct={upiDiscPct}
           availableCoupons={availableCoupons} onCouponApply={onCouponApply} onCouponRemove={onCouponRemove} />
       </div>
-
-      {editingAddress && (
-        <AddressEditModal address={editingAddress} onClose={() => setEditingAddress(null)} onSaved={handleAddressSaved} />
-      )}
     </div>
   );
 };
+
+// ── Main Cart ─────────────────────────────────────────────────────────────────
 
 const Cart = () => {
   const navigate  = useNavigate();
@@ -692,11 +751,13 @@ const Cart = () => {
       api.get('orders/coupons/active/'),
     ]).then(([cartRes, addrRes, couponRes]) => {
       setItems(cartRes.data?.items ?? []);
-      setAddresses(addrRes.data ?? []);
-      setAvailableCoupons(couponRes.data?.results ?? couponRes.data ?? []);
       const addrs = addrRes.data ?? [];
-      if (addrs.find(a => a.is_default_shipping)) setShippingId(addrs.find(a => a.is_default_shipping).id);
-      if (addrs.find(a => a.is_default_billing))  setBillingId(addrs.find(a => a.is_default_billing).id);
+      setAddresses(addrs);
+      setAvailableCoupons(couponRes.data?.results ?? couponRes.data ?? []);
+      const defShip = addrs.find(a => a.is_default_shipping);
+      const defBill = addrs.find(a => a.is_default_billing);
+      if (defShip) setShippingId(defShip.id);
+      if (defBill) setBillingId(defBill.id);
     }).catch(() => showToast('Failed to load cart.', 'error'))
       .finally(() => setLoading(false));
   }, [showToast]);
@@ -823,7 +884,7 @@ const Cart = () => {
                 return (
                   <div key={item.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-4 shadow-sm">
                     <div className="flex gap-3 mb-3">
-                      {thumb ? <img src={thumb} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 border border-gray-100 dark:border-white/5" /> : <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center"><ShoppingCart className="w-5 h-5 text-gray-300" /></div>}
+                      {thumb ? <img src={thumb} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0" /> : <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center"><ShoppingCart className="w-5 h-5 text-gray-300" /></div>}
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-start">
                           <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">{item.variation?.product_name}</p>
