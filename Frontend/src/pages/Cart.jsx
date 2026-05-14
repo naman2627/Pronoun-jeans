@@ -6,7 +6,7 @@ import {
   Tag, ReceiptText, Plus, Minus, Trash2,
   Truck, CreditCard, Building, ShieldCheck, Smartphone,
   X, Lock, Unlock, ChevronDown, ChevronUp, Copy, Check,
-  Upload, Hash, Clock, Pencil,
+  Upload, Hash, Clock, Pencil, Info,
 } from 'lucide-react';
 import api from '../api/axios';
 import { useCartStore } from '../store/useCartStore';
@@ -28,18 +28,8 @@ const loadRazorpayScript = () =>
     document.body.appendChild(s);
   });
 
-// ── GST Math ──────────────────────────────────────────────────────────────────
-// productTotal  = sum of inclusive prices
-// base          = productTotal × 0.95       (GST-exclusive portion)
-// couponDisc    = base × couponPct          (on base)
-// prepaidDisc   = base × upiDiscPct         (on base — same rule as coupon)
-// taxableAmount = productTotal - couponDisc - prepaidDisc
-// gst           = taxableAmount × 5/105     (extract 5% from inclusive taxable)
-// shipping      = 300 if taxableAmount < 15000 else 0
-// grandTotal    = taxableAmount + shipping
-
 const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
-  const r2          = (n) => Math.round(n * 100) / 100;
+  const r2           = (n) => Math.round(n * 100) / 100;
   const productTotal = r2(subtotal);
   const base         = r2(productTotal * 0.95);
   const couponDisc   = r2(base * couponPct);
@@ -55,6 +45,37 @@ const calcGST = (subtotal, couponPct = 0, upiDiscPct = 0) => {
 const fmt         = (n) => parseFloat(n || 0).toFixed(2);
 const buildUpiUri = (amount, note = 'B2B Order') =>
   `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(BUSINESS_NAME)}&am=${fmt(amount)}&cu=INR&tn=${encodeURIComponent(note)}`;
+
+// ── Set Breakdown Tooltip ─────────────────────────────────────────────────────
+
+const SetBreakdownTooltip = ({ breakdown }) => {
+  const [visible, setVisible] = useState(false);
+  if (!breakdown) return null;
+  return (
+    <span className="relative inline-flex items-center ml-1">
+      <button
+        onMouseEnter={() => setVisible(true)}
+        onMouseLeave={() => setVisible(false)}
+        onFocus={() => setVisible(true)}
+        onBlur={() => setVisible(false)}
+        className="text-gray-400 hover:text-accent transition-colors focus:outline-none"
+        tabIndex={0}
+        aria-label="Set size breakdown"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+      {visible && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-max max-w-[220px]">
+          <div className="bg-gray-900 dark:bg-zinc-700 text-white text-xs font-medium px-3 py-2 rounded-xl shadow-xl leading-relaxed">
+            <p className="text-white/60 text-[10px] uppercase tracking-widest mb-0.5">Size Breakdown</p>
+            {breakdown}
+          </div>
+          <div className="w-2 h-2 bg-gray-900 dark:bg-zinc-700 rotate-45 mx-auto -mt-1" />
+        </div>
+      )}
+    </span>
+  );
+};
 
 // ── GST Seller Block ──────────────────────────────────────────────────────────
 
@@ -135,6 +156,8 @@ const useQtyUpdate = (showToast, fetchCart) => {
   return { saving, scheduleUpdate };
 };
 
+// ── Cart Row with breakdown tooltip ──────────────────────────────────────────
+
 const CartRow = ({ item, index, onQtyChange, saving }) => {
   const { id, variation, quantity } = item;
   const price = parseFloat(variation?.b2b_price ?? 0);
@@ -151,7 +174,10 @@ const CartRow = ({ item, index, onQtyChange, saving }) => {
             </div>
           )}
           <div>
-            <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug max-w-[200px]">{variation?.product_name ?? '—'}</p>
+            <div className="flex items-center gap-1">
+              <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm leading-snug max-w-[200px]">{variation?.product_name ?? '—'}</p>
+              <SetBreakdownTooltip breakdown={variation?.set_breakdown} />
+            </div>
             <p className="text-gray-400 dark:text-zinc-500 text-xs font-mono mt-0.5">{variation?.sku ?? ''}</p>
           </div>
         </div>
@@ -177,7 +203,7 @@ const CartRow = ({ item, index, onQtyChange, saving }) => {
   );
 };
 
-// ── Address Form (inline, used for both Add and Edit) ─────────────────────────
+// ── Address Form ──────────────────────────────────────────────────────────────
 
 const EMPTY_ADDR = {
   address_line_1: '', address_line_2: '', city: '', state: '',
@@ -236,9 +262,7 @@ const AddressForm = ({ initial = EMPTY_ADDR, editId = null, onSaved, onCancel })
       </div>
       {error && <p className="text-red-500 text-xs">{error}</p>}
       <div className="flex gap-3">
-        <button onClick={onCancel} className="flex-1 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-300 font-bold py-2.5 rounded-xl text-sm transition-colors hover:bg-gray-50 dark:hover:bg-zinc-800">
-          Cancel
-        </button>
+        <button onClick={onCancel} className="flex-1 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-zinc-300 font-bold py-2.5 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
         <button onClick={handleSave} disabled={saving}
           className="flex-1 flex items-center justify-center gap-2 bg-accent hover:bg-red-700 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">
           {saving ? <Loader className="animate-spin w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
@@ -248,8 +272,6 @@ const AddressForm = ({ initial = EMPTY_ADDR, editId = null, onSaved, onCancel })
     </div>
   );
 };
-
-// ── Address Card ──────────────────────────────────────────────────────────────
 
 const AddressCard = ({ addr, selected, onSelect, type, onEdit }) => {
   const Icon = type === 'shipping' ? Truck : Building;
@@ -269,21 +291,18 @@ const AddressCard = ({ addr, selected, onSelect, type, onEdit }) => {
         {addr.address_line_2 && <p className="text-gray-500 text-xs">{addr.address_line_2}</p>}
         <p className="text-gray-500 text-xs">{addr.city}, {addr.state} — {addr.pincode}</p>
       </div>
-      <button onClick={() => onEdit(addr)}
-        className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-accent transition-colors font-semibold">
+      <button onClick={() => onEdit(addr)} className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-accent transition-colors font-semibold">
         <Pencil className="w-3 h-3" /> Edit
       </button>
     </div>
   );
 };
 
-// ── Address Section (with Add + Edit inline) ──────────────────────────────────
-
 const AddressSection = ({ type, addresses, selectedId, onSelect, onAddressesUpdated }) => {
-  const Icon = type === 'shipping' ? Truck : Building;
+  const Icon  = type === 'shipping' ? Truck : Building;
   const label = type === 'shipping' ? 'Shipping Address' : 'Billing Address';
-  const [showForm, setShowForm]   = useState(false);
-  const [editAddr, setEditAddr]   = useState(null);   // null = add mode, object = edit mode
+  const [showForm, setShowForm] = useState(false);
+  const [editAddr, setEditAddr] = useState(null);
 
   const openAdd  = () => { setEditAddr(null); setShowForm(true); };
   const openEdit = (addr) => { setEditAddr(addr); setShowForm(true); };
@@ -307,16 +326,10 @@ const AddressSection = ({ type, addresses, selectedId, onSelect, onAddressesUpda
           </button>
         )}
       </div>
-
       {showForm && (
-        <AddressForm
-          initial={editAddr || EMPTY_ADDR}
-          editId={editAddr?.id || null}
-          onSaved={handleSaved}
-          onCancel={() => { setShowForm(false); setEditAddr(null); }}
-        />
+        <AddressForm initial={editAddr || EMPTY_ADDR} editId={editAddr?.id || null}
+          onSaved={handleSaved} onCancel={() => { setShowForm(false); setEditAddr(null); }} />
       )}
-
       {!showForm && (
         addresses.length === 0 ? (
           <p className="text-gray-500 text-sm">No addresses saved yet. Click "Add New" to add one.</p>
@@ -433,8 +446,6 @@ const AvailableOffers = ({ coupons, subtotal, appliedCoupon, onApply, onRemove }
   );
 };
 
-// ── Order Summary ─────────────────────────────────────────────────────────────
-
 const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onCouponApply, onCouponRemove }) => {
   const subtotal   = items.reduce((s, i) => s + parseFloat(i.variation?.b2b_price ?? 0) * i.quantity, 0);
   const couponPct  = couponData ? parseFloat(couponData.discount_value) / 100 : 0;
@@ -458,14 +469,11 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
           <span>Total Units</span><span className="font-semibold text-gray-900 dark:text-zinc-100">{totalUnits}</span>
         </div>
       </div>
-
       <AvailableOffers coupons={availableCoupons} subtotal={subtotal}
         appliedCoupon={couponData} onApply={onCouponApply} onRemove={onCouponRemove} />
-
       <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-3.5 space-y-2.5 text-sm border border-gray-100 dark:border-white/5">
         <div className="flex justify-between text-gray-700 dark:text-zinc-300">
-          <span className="font-semibold">Product Total</span>
-          <span className="font-semibold">₹{fmt(productTotal)}</span>
+          <span className="font-semibold">Product Total</span><span className="font-semibold">₹{fmt(productTotal)}</span>
         </div>
         {couponDisc > 0 && (
           <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
@@ -478,40 +486,32 @@ const OrderSummaryCard = ({ items, couponData, upiDiscPct, availableCoupons, onC
           </div>
         )}
         <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-dashed border-gray-200 dark:border-white/10 pt-2">
-          <span className="font-semibold">Taxable Amount</span>
-          <span className="font-semibold">₹{fmt(taxableAmount)}</span>
+          <span className="font-semibold">Taxable Amount</span><span className="font-semibold">₹{fmt(taxableAmount)}</span>
         </div>
         <div className="flex justify-between text-gray-500 dark:text-zinc-400">
           <span>GST 5%</span><span>₹{fmt(gst)}</span>
         </div>
         {shipping > 0 ? (
           <div className="flex justify-between text-orange-600 dark:text-orange-400 font-semibold">
-            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
-            <span>+₹{fmt(shipping)}</span>
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span><span>+₹{fmt(shipping)}</span>
           </div>
         ) : (
           <div className="flex justify-between text-green-600 dark:text-green-400 font-semibold">
-            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span>
-            <span>FREE</span>
+            <span className="flex items-center gap-1"><Truck className="w-3.5 h-3.5" /> Shipping</span><span>FREE</span>
           </div>
         )}
       </div>
-
       <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-xl px-4 py-3">
         <span className="text-accent font-bold text-sm uppercase tracking-widest">Grand Total</span>
         <span className="text-gray-900 dark:text-zinc-100 font-extrabold text-xl">₹{fmt(grandTotal)}</span>
       </div>
-
       {shipping === 0 && <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">🚚 Free shipping on orders above ₹15,000!</p>}
       {shipping > 0 && <p className="text-orange-600 dark:text-orange-400 text-xs text-center">Add ₹{fmt(FREE_SHIPPING_THRESHOLD - taxableAmount)} more for free shipping</p>}
       {totalDisc > 0 && <p className="text-green-600 dark:text-green-400 text-xs text-center font-semibold">You save ₹{fmt(totalDisc)} on this order 🎉</p>}
-
       <GSTSellerBlock />
     </div>
   );
 };
-
-// ── Proof Selector ────────────────────────────────────────────────────────────
 
 const PROOF_OPTIONS = [
   { key: 'utr',        icon: Hash,   label: 'Enter UTR',          sub: 'Enter your 12-digit transaction ID'       },
@@ -550,11 +550,10 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
           <label className="block text-gray-700 dark:text-zinc-300 text-xs font-bold uppercase tracking-widest">Payment Screenshot *</label>
           <div onClick={() => fileRef.current?.click()}
             className={`cursor-pointer border-2 border-dashed rounded-xl p-5 flex flex-col items-center gap-2 ${screenshotFile ? 'border-green-400 bg-green-50 dark:bg-green-500/5' : 'border-gray-200 dark:border-white/10 hover:border-accent/40 bg-gray-50 dark:bg-zinc-800'}`}>
-            {screenshotFile ? (
-              <><CheckCircle2 className="w-6 h-6 text-green-500" /><p className="text-green-700 dark:text-green-400 text-sm font-semibold">{screenshotFile.name}</p></>
-            ) : (
-              <><Upload className="w-6 h-6 text-gray-400" /><p className="text-gray-600 dark:text-zinc-300 text-sm font-semibold">Click to upload screenshot</p><p className="text-gray-400 text-xs">JPG, PNG or WebP · Max 5MB</p></>
-            )}
+            {screenshotFile
+              ? <><CheckCircle2 className="w-6 h-6 text-green-500" /><p className="text-green-700 dark:text-green-400 text-sm font-semibold">{screenshotFile.name}</p></>
+              : <><Upload className="w-6 h-6 text-gray-400" /><p className="text-gray-600 dark:text-zinc-300 text-sm font-semibold">Click to upload screenshot</p><p className="text-gray-400 text-xs">JPG, PNG or WebP · Max 5MB</p></>
+            }
           </div>
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
             onChange={e => setScreenshotFile(e.target.files?.[0] || null)} />
@@ -573,17 +572,15 @@ const ProofSelector = ({ proofType, setProofType, utrNumber, setUtrNumber, scree
   );
 };
 
-// ── Direct UPI Panel ──────────────────────────────────────────────────────────
-
 const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proofType, setProofType, utrNumber, setUtrNumber, screenshotFile, setScreenshotFile, onConfirm, confirming }) => {
   const [copied, setCopied] = useState(false);
-  const upiDiscPct = paymentPlan === 'full' ? 0.01 : 0;
+  const upiDiscPct  = paymentPlan === 'full' ? 0.01 : 0;
   const { prepaidDisc, taxableAmount, gst, shipping, grandTotal } = calcGST(subtotal, couponPct, upiDiscPct);
-  const payableNow = paymentPlan === 'advance' ? Math.round((taxableAmount * 0.10 + shipping) * 100) / 100 : grandTotal;
-  const balanceDue = paymentPlan === 'advance' ? Math.round((taxableAmount - taxableAmount * 0.10) * 100) / 100 : 0;
-  const upiUri     = buildUpiUri(payableNow, `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
-  const isMobile   = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
-  const canConfirm = () => { if (proofType === 'utr') return !!utrNumber.trim(); if (proofType === 'screenshot') return !!screenshotFile; return true; };
+  const payableNow  = paymentPlan === 'advance' ? Math.round((taxableAmount * 0.10 + shipping) * 100) / 100 : grandTotal;
+  const balanceDue  = paymentPlan === 'advance' ? Math.round((taxableAmount - taxableAmount * 0.10) * 100) / 100 : 0;
+  const upiUri      = buildUpiUri(payableNow, `Pronoun Jeans - ${paymentPlan === 'advance' ? '10% Advance' : 'Full Payment'}`);
+  const isMobile    = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+  const canConfirm  = () => { if (proofType === 'utr') return !!utrNumber.trim(); if (proofType === 'screenshot') return !!screenshotFile; return true; };
 
   return (
     <div className="space-y-5">
@@ -604,7 +601,6 @@ const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proo
           ))}
         </div>
       </div>
-
       <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-xl p-4 space-y-2 text-sm border border-gray-100 dark:border-white/5">
         {prepaidDisc > 0 && <div className="flex justify-between text-green-600 font-semibold"><span>Prepaid Discount (1%)</span><span>−₹{fmt(prepaidDisc)}</span></div>}
         <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>Taxable Amount</span><span>₹{fmt(taxableAmount)}</span></div>
@@ -612,16 +608,13 @@ const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proo
         {shipping > 0
           ? <div className="flex justify-between text-orange-600 font-semibold"><span>Shipping</span><span>+₹{fmt(shipping)}</span></div>
           : <div className="flex justify-between text-green-600 font-semibold"><span>Shipping</span><span>FREE</span></div>}
-        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2">
-          <span className="font-semibold">Order Total</span><span className="font-bold">₹{fmt(grandTotal)}</span>
-        </div>
+        <div className="flex justify-between text-gray-700 dark:text-zinc-300 border-t border-gray-200 dark:border-white/10 pt-2"><span className="font-semibold">Order Total</span><span className="font-bold">₹{fmt(grandTotal)}</span></div>
         {paymentPlan === 'advance' && <div className="flex justify-between text-gray-500 dark:text-zinc-400"><span>Balance Due Later</span><span>₹{fmt(balanceDue)}</span></div>}
         <div className="flex items-center justify-between bg-accent/10 border border-accent/20 rounded-lg px-3 py-2 mt-1">
           <span className="text-accent font-bold text-sm uppercase tracking-widest">Pay Now</span>
           <span className="text-gray-900 dark:text-zinc-100 font-black text-lg">₹{fmt(payableNow)}</span>
         </div>
       </div>
-
       <div className="flex flex-col items-center gap-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-2xl p-6">
         <p className="text-gray-700 dark:text-zinc-300 text-sm font-bold">Scan to Pay ₹{fmt(payableNow)}</p>
         <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100">
@@ -641,9 +634,7 @@ const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proo
           ? <a href={upiUri} className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold px-6 py-3 rounded-xl text-sm"><Smartphone className="w-4 h-4" /> Pay ₹{fmt(payableNow)} via UPI App</a>
           : <p className="text-gray-400 text-xs text-center">On mobile, tap "Pay via UPI App" to open PhonePe / GPay directly.</p>}
       </div>
-
       <ProofSelector proofType={proofType} setProofType={setProofType} utrNumber={utrNumber} setUtrNumber={setUtrNumber} screenshotFile={screenshotFile} setScreenshotFile={setScreenshotFile} />
-
       <button onClick={onConfirm} disabled={confirming || !canConfirm()}
         className="w-full flex items-center justify-center gap-2.5 bg-accent hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-6 py-3.5 rounded-xl transition-colors text-sm">
         {confirming ? <><Loader className="animate-spin w-4 h-4" /> Confirming…</> : <><PackageCheck className="w-4 h-4" /> Confirm Order</>}
@@ -652,8 +643,6 @@ const DirectUPIPanel = ({ subtotal, couponPct, paymentPlan, setPaymentPlan, proo
     </div>
   );
 };
-
-// ── Checkout Panel ────────────────────────────────────────────────────────────
 
 const CheckoutPanel = ({
   items, addresses, setAddresses, shippingId, billingId,
@@ -672,13 +661,10 @@ const CheckoutPanel = ({
   return (
     <div className="flex flex-col xl:flex-row gap-8 items-start">
       <div className="flex-1 min-w-0 space-y-6">
-
         <AddressSection type="shipping" addresses={addresses} selectedId={shippingId}
           onSelect={onShippingSelect} onAddressesUpdated={setAddresses} />
-
         <AddressSection type="billing" addresses={addresses} selectedId={billingId}
           onSelect={onBillingSelect} onAddressesUpdated={setAddresses} />
-
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5"><ShieldCheck className="w-5 h-5 text-accent" /><h2 className="text-gray-900 dark:text-zinc-100 font-bold">Payment Method</h2></div>
           <div className="flex gap-3 mb-6">
@@ -708,7 +694,6 @@ const CheckoutPanel = ({
           )}
         </div>
       </div>
-
       <div className="w-full xl:w-80 shrink-0">
         <OrderSummaryCard items={items} couponData={couponData} upiDiscPct={upiDiscPct}
           availableCoupons={availableCoupons} onCouponApply={onCouponApply} onCouponRemove={onCouponRemove} />
@@ -716,8 +701,6 @@ const CheckoutPanel = ({
     </div>
   );
 };
-
-// ── Main Cart ─────────────────────────────────────────────────────────────────
 
 const Cart = () => {
   const navigate  = useNavigate();
@@ -799,7 +782,6 @@ const Cart = () => {
       const res = await api.post('orders/razorpay/create/', { shipping_address_id: shippingId, billing_address_id: billingId, coupon_code: couponData?.coupon_code || '' });
       orderData = res.data;
     } catch (err) { showToast(err.response?.data?.error || 'Failed to initiate payment.', 'error'); setRazorpayChecking(false); return; }
-
     const options = {
       key: orderData.key_id, amount: orderData.amount, currency: orderData.currency,
       name: 'Pronoun Jeans', description: 'B2B Wholesale Order', order_id: orderData.razorpay_order_id,
@@ -887,7 +869,10 @@ const Cart = () => {
                       {thumb ? <img src={thumb} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0" /> : <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-zinc-800 shrink-0 flex items-center justify-center"><ShoppingCart className="w-5 h-5 text-gray-300" /></div>}
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-start">
-                          <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">{item.variation?.product_name}</p>
+                          <div className="flex items-center gap-1">
+                            <p className="text-gray-900 dark:text-zinc-100 font-semibold text-sm">{item.variation?.product_name}</p>
+                            <SetBreakdownTooltip breakdown={item.variation?.set_breakdown} />
+                          </div>
                           <button onClick={() => handleQtyChange(item.id, 0)} className="text-gray-400 hover:text-red-500 ml-2"><Trash2 className="w-4 h-4" /></button>
                         </div>
                         <p className="text-gray-400 text-xs font-mono mt-0.5">{item.variation?.sku}</p>
