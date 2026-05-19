@@ -75,7 +75,7 @@ class ProductImageInline(admin.TabularInline):
 
 class ProductVariationInline(admin.TabularInline):
     model           = ProductVariation
-    form            = ProductVariationForm   # ← enforces the dropdown
+    form            = ProductVariationForm
     extra           = 0
     fields          = [
         'size', 'color_palette', 'color', 'sku',
@@ -83,6 +83,11 @@ class ProductVariationInline(admin.TabularInline):
         'set_breakdown', 'stock_quantity', 'image',
     ]
     readonly_fields = ['color']
+
+    class Media:
+        # Django will serve this from products/static/admin/js/
+        # as long as APP_DIRS = True (confirmed in settings).
+        js = ('admin/js/set_breakdown_builder.js',)
 
 
 # ── Clone action ──────────────────────────────────────────────────────────────
@@ -213,7 +218,7 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(ProductVariation)
 class ProductVariationAdmin(admin.ModelAdmin):
-    form          = ProductVariationForm   # ← also enforces dropdown on standalone variation page
+    form          = ProductVariationForm
     list_display  = ['sku', 'product', 'size', 'color', 'b2b_price', 'per_piece_price', 'mrp', 'mrp_per_piece', 'stock_quantity']
     list_filter   = ['product__category', 'size']
     search_fields = ['sku', 'product__name', 'color']
