@@ -4,7 +4,10 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.text import slugify
 
-from .models import Category, Product, ProductImage, ProductVariation, Color, HeroSlide
+from .models import (
+    Category, Product, ProductImage, ProductVariation,
+    Color, HeroSlide, SizeSet, SizeSetBreakdown,
+)
 
 
 def _unique_slug(base_slug):
@@ -44,24 +47,60 @@ class HeroSlideAdmin(admin.ModelAdmin):
     preview.short_description = 'Preview'
 
 
-# ── Variation form ────────────────────────────────────────────────────────────
+# ── Size Set Admin ─────────────────────────────────────────────────────────────
+
+class SizeSetBreakdownInline(admin.TabularInline):
+    model   = SizeSetBreakdown
+    extra   = 1
+    fields  = ['label', 'breakdown_string']
+
+
+@admin.register(SizeSet)
+class SizeSetAdmin(admin.ModelAdmin):
+    list_display  = ['name', 'is_active', 'order', 'breakdown_count']
+    list_editable = ['is_active', 'order']
+    ordering      = ['order', 'name']
+    inlines       = [SizeSetBreakdownInline]
+
+    def breakdown_count(self, obj):
+        return obj.breakdowns.count()
+    breakdown_count.short_description = 'Breakdowns'
+
+
+# ── Variation Form ────────────────────────────────────────────────────────────
 
 class ProductVariationForm(forms.ModelForm):
     """
-    Replaces the free-text size input with a strict Select dropdown.
-    Django auto-generates a Select widget when a field has choices=, but
-    TabularInline re-renders its own widgets, so we must explicitly declare
-    the form here and attach it to the inline and the standalone admin page.
+    Dynamically filters the size_breakdown dropdown to only show
+    breakdowns that belong to the currently selected size_set.
+    On new rows the full list is shown; on save Django validates the FK.
     """
-
-    size = forms.ChoiceField(
-        choices=ProductVariation.SIZE_CHOICES,
-        widget=forms.Select(attrs={'style': 'min-width: 140px;'}),
-    )
 
     class Meta:
         model  = ProductVariation
         fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Limit breakdown choices to the selected size_set's breakdowns
+        instance = kwargs.get('instance')
+        if instance and instance.size_set_id:
+            self.fields['size_breakdown'].queryset = (
+                SizeSetBreakdown.objects.filter(size_set_id=instance.size_set_id)
+            )
+        else:
+            # New row — show all breakdowns grouped by size set
+            self.fields['size_breakdown'].queryset = (
+                SizeSetBreakdown.objects.select_related('size_set').all()
+            )
+
+        # Limit size_set to active sets only
+        self.fields['size_set'].queryset = SizeSet.objects.filter(is_active=True)
+
+        # Style the dropdowns
+        self.fields['size_set'].widget.attrs.update({'style': 'min-width:140px;'})
+        self.fields['size_breakdown'].widget.attrs.update({'style': 'min-width:200px;'})
 
 
 # ── Inlines ───────────────────────────────────────────────────────────────────
@@ -74,19 +113,27 @@ class ProductImageInline(admin.TabularInline):
 
 
 class ProductVariationInline(admin.TabularInline):
-    model           = ProductVariation
-    form            = ProductVariationForm
-    extra           = 0
-    fields          = [
-        'size', 'color_palette', 'color', 'sku',
-        'b2b_price', 'per_piece_price', 'mrp', 'mrp_per_piece',
-        'set_breakdown', 'stock_quantity', 'image',
+    model  = ProductVariation
+    form   = ProductVariationForm
+    extra  = 0
+
+    # Left = most important, right = less priority
+    fields = [
+        'size_set',         # 1st — most important
+        'color_palette',    # 2nd
+        'sku',              # 3rd
+        'b2b_price',        # 4th
+        'size_breakdown',   # 5th
+        'per_piece_price',  # 6th
+        'mrp',              # 7th
+        'mrp_per_piece',    # 8th
+        'stock_quantity',   # 9th
+        'image',            # 10th
+        'color',            # last — read-only, auto-filled
     ]
     readonly_fields = ['color']
 
     class Media:
-        # Django will serve this from products/static/admin/js/
-        # as long as APP_DIRS = True (confirmed in settings).
         js = ('admin/js/set_breakdown_builder.js',)
 
 
@@ -108,21 +155,22 @@ def clone_products(modeladmin, request, queryset):
         new_name = f"{source.name} (Copy)"
         new_slug = _unique_slug(slugify(new_name))
 
-        clone              = Product()
-        clone.name         = new_name
-        clone.slug         = new_slug
-        clone.category     = source.category
-        clone.description  = source.description
+        clone                = Product()
+        clone.name           = new_name
+        clone.slug           = new_slug
+        clone.category       = source.category
+        clone.description    = source.description
         clone.fabric_details = source.fabric_details
-        clone.is_active    = False
-        clone.moq          = source.moq
-        clone.image        = source.image
+        clone.is_active      = False
+        clone.moq            = source.moq
+        clone.image          = source.image
         clone.save()
 
         for v in source.variations.all():
             nv                 = ProductVariation()
             nv.product         = clone
-            nv.size            = v.size
+            nv.size_set        = v.size_set
+            nv.size_breakdown  = v.size_breakdown
             nv.color           = v.color
             nv.color_palette   = v.color_palette
             nv.sku             = _unique_sku(f"{v.sku}-copy")
@@ -163,7 +211,7 @@ def clone_products(modeladmin, request, queryset):
     )
 
 
-# ── Other admin registrations ─────────────────────────────────────────────────
+# ── Other Admin Registrations ─────────────────────────────────────────────────
 
 @admin.register(Color)
 class ColorAdmin(admin.ModelAdmin):
@@ -219,7 +267,7 @@ class ProductAdmin(admin.ModelAdmin):
 @admin.register(ProductVariation)
 class ProductVariationAdmin(admin.ModelAdmin):
     form          = ProductVariationForm
-    list_display  = ['sku', 'product', 'size', 'color', 'b2b_price', 'per_piece_price', 'mrp', 'mrp_per_piece', 'stock_quantity']
-    list_filter   = ['product__category', 'size']
+    list_display  = ['sku', 'product', 'size_set', 'color', 'b2b_price', 'per_piece_price', 'mrp', 'mrp_per_piece', 'stock_quantity']
+    list_filter   = ['product__category', 'size_set']
     search_fields = ['sku', 'product__name', 'color']
-    ordering      = ['product', 'size']
+    ordering      = ['product', 'size_set__name']

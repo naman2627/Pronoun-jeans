@@ -68,90 +68,100 @@ class Color(models.Model):
         return f"{self.name} ({self.hex_code})"
 
 
+# ── Size Sets ─────────────────────────────────────────────────────────────────
+
+class SizeSet(models.Model):
+    """
+    A named size set the admin creates, e.g. 'L TO 3XL', 'M TO 4XL'.
+    This replaces the hardcoded SIZE_CHOICES on ProductVariation.
+    The name becomes the value shown in the Size dropdown on the variation
+    inline and is what the API returns as the 'size' string.
+    """
+    name      = models.CharField(max_length=50, unique=True,
+                                 help_text='e.g. "L TO 3XL" or "M TO 4XL"')
+    is_active = models.BooleanField(default=True,
+                                    help_text='Inactive sets are hidden from the variation dropdown.')
+    order     = models.PositiveSmallIntegerField(default=0,
+                                                 help_text='Controls display order in the dropdown.')
+
+    class Meta:
+        ordering     = ['order', 'name']
+        verbose_name = 'Size Set'
+        verbose_name_plural = 'Size Sets'
+
+    def __str__(self):
+        return self.name
+
+
+class SizeSetBreakdown(models.Model):
+    """
+    A reusable breakdown option for a SizeSet.
+    e.g. for 'L TO 3XL':
+        label            = '1xL, 1xXL, 1xXXL, 1x3XL'
+        breakdown_string = '1xL, 1xXL, 1xXXL, 1x3XL'
+    Multiple breakdowns can exist per SizeSet so the admin can pick
+    the right distribution for each product variation.
+    """
+    size_set         = models.ForeignKey(SizeSet, on_delete=models.CASCADE,
+                                         related_name='breakdowns')
+    label            = models.CharField(max_length=255,
+                                        help_text='Human-readable label shown in the dropdown, '
+                                                  'e.g. "1xL, 2xXL, 1xXXL, 1x3XL"')
+    breakdown_string = models.CharField(max_length=255,
+                                        help_text='Exact string stored on the variation and '
+                                                  'shown to buyers in the tooltip. '
+                                                  'Usually the same as the label.')
+
+    class Meta:
+        unique_together     = ('size_set', 'breakdown_string')
+        ordering            = ['size_set__name', 'label']
+        verbose_name        = 'Size Set Breakdown'
+        verbose_name_plural = 'Size Set Breakdowns'
+
+    def __str__(self):
+        return f"{self.size_set.name} — {self.label}"
+
+
+# ── Product Variation ─────────────────────────────────────────────────────────
+
 class ProductVariation(models.Model):
 
-    # ── Size choices ──────────────────────────────────────────────────────────
-    # SOURCE OF TRUTH for sizes across admin, serializer, and any future form.
-    # To add a new size: append a tuple here, then run makemigrations + migrate.
-    # Stored value (left) = what goes in the DB and the API response.
-    # Display label (right) = what the admin sees in the dropdown.
-    #
-    # AUDIT NOTE (2026-05-15): all existing rows confirmed clean.
-    # Non-standard variants (3-XL, 4-XL, 2-XL, 4-XL TO 5-XL, 28-34, 30-36)
-    # were normalized by fix_sizes_datamigration.py before this migration ran.
-    SIZE_CHOICES = [
-        # ── Standard apparel ──────────────────────────────────────────────────
-        ('XS',            'XS — Extra Small'),
-        ('S',             'S — Small'),
-        ('M',             'M — Medium'),
-        ('L',             'L — Large'),
-        ('XL',            'XL — Extra Large'),
-        ('XXL',           'XXL — Double XL'),
-        ('3XL',           '3XL — Triple XL'),
-        ('4XL',           '4XL — Four XL'),
-        ('5XL',           '5XL — Five XL'),
-        ('FS',            'FS — Free Size'),
-        ('One Size',      'One Size'),
+    product       = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="variations")
 
-        # ── Numeric / waist sizes ─────────────────────────────────────────────
-        ('28',            '28'),
-        ('30',            '30'),
-        ('32',            '32'),
-        ('34',            '34'),
-        ('36',            '36'),
-        ('38',            '38'),
-        ('40',            '40'),
-        ('42',            '42'),
-        ('44',            '44'),
-
-        # ── Set / range sizes (alphabetical order for readability) ────────────
-        # Apparel sets
-        ('L TO 2XL',      'L TO 2XL (Set)'),
-        ('L TO 3XL',      'L TO 3XL (Set)'),
-        ('L TO 4XL',      'L TO 4XL (Set)'),
-        ('L TO 5XL',      'L TO 5XL (Set)'),
-        ('M TO 3XL',      'M TO 3XL (Set)'),
-        ('M TO 4XL',      'M TO 4XL (Set)'),
-        ('S TO XXL',      'S TO XXL (Set)'),
-        ('4XL TO 5XL',    '4XL TO 5XL (Set)'),
-        # Numeric sets
-        ('28 TO 34',      '28 TO 34 (Set)'),
-        ('28 TO 36',      '28 TO 36 (Set)'),
-        ('30 TO 36',      '30 TO 36 (Set)'),
-        ('30 TO 38',      '30 TO 38 (Set)'),
-        ('32 TO 38',      '32 TO 38 (Set)'),
-    ]
-
-    product         = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="variations")
-
-    # max_length=20: longest stored value is '4XL TO 5XL' (10 chars).
-    # Set to 20 for comfortable headroom.
-    size            = models.CharField(
-        max_length=20,
-        choices=SIZE_CHOICES,
+    # size is now a FK to SizeSet — the admin picks from dynamically created sets.
+    # SET_NULL so deleting a SizeSet doesn't cascade-delete variations;
+    # the admin should deactivate sets instead.
+    size_set      = models.ForeignKey(
+        SizeSet, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='variations',
+        verbose_name='Size',
     )
 
-    color           = models.CharField(max_length=100, blank=True, null=True)
-    color_palette   = models.ForeignKey(
+    # set_breakdown is now a FK to SizeSetBreakdown — nullable because
+    # not every variation needs a breakdown (e.g. if only one breakdown exists).
+    size_breakdown = models.ForeignKey(
+        SizeSetBreakdown, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='variations',
+        verbose_name='Set Breakdown',
+    )
+
+    color         = models.CharField(max_length=100, blank=True, null=True)
+    color_palette = models.ForeignKey(
         Color, on_delete=models.SET_NULL, null=True, blank=True, related_name='variations'
     )
-    sku             = models.CharField(max_length=100, unique=True)
+    sku           = models.CharField(max_length=100, unique=True)
 
     b2b_price       = models.DecimalField(max_digits=10, decimal_places=2)
     per_piece_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     mrp             = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     mrp_per_piece   = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    set_breakdown   = models.CharField(
-        max_length=255, blank=True, null=True,
-        help_text='Size breakdown of the set, e.g. "1xL, 2xXL, 1x2XL, 1x3XL"',
-    )
-
     stock_quantity  = models.PositiveIntegerField(default=0)
     image           = models.ImageField(upload_to='variations/', null=True, blank=True)
 
     class Meta:
-        unique_together = ("product", "size", "color")
+        # unique_together now uses size_set instead of size string
+        unique_together = ("product", "size_set", "color")
         verbose_name    = "Product Variation"
 
     def save(self, *args, **kwargs):
@@ -173,6 +183,18 @@ class ProductVariation(models.Model):
                     self.color = color_name
 
         super().save(*args, **kwargs)
+
+    # ── Convenience properties used by serializer ─────────────────────────────
+
+    @property
+    def size(self):
+        """Returns the size name string, e.g. 'L TO 3XL'. API-compatible."""
+        return self.size_set.name if self.size_set else ''
+
+    @property
+    def set_breakdown(self):
+        """Returns the breakdown string, e.g. '1xL, 1xXL, 1xXXL, 1x3XL'."""
+        return self.size_breakdown.breakdown_string if self.size_breakdown else ''
 
     def __str__(self):
         product_name = (

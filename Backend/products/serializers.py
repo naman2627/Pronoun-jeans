@@ -20,10 +20,12 @@ class ProductVariationSerializer(serializers.ModelSerializer):
     color_name        = serializers.SerializerMethodField()
     color_hex         = serializers.SerializerMethodField()
 
-    # Human-readable label, e.g. "L TO 3XL (Set)".
-    # Useful if you ever want to render the display label in the frontend
-    # rather than the raw key.
-    size_display = serializers.SerializerMethodField(read_only=True)
+    # 'size' and 'set_breakdown' are now model @property fields that return
+    # plain strings — the frontend receives exactly the same shape as before.
+    # No frontend changes needed.
+    size          = serializers.SerializerMethodField()
+    size_display  = serializers.SerializerMethodField()
+    set_breakdown = serializers.SerializerMethodField()
 
     class Meta:
         model  = ProductVariation
@@ -40,21 +42,17 @@ class ProductVariationSerializer(serializers.ModelSerializer):
             'stock_quantity', 'image',
         ]
 
-    def validate_size(self, value):
-        """
-        Closes the API back door — even if someone bypasses the admin form
-        and POSTs directly to the API, they cannot save an arbitrary string.
-        """
-        valid_keys = {choice[0] for choice in ProductVariation.SIZE_CHOICES}
-        if value not in valid_keys:
-            raise serializers.ValidationError(
-                f"'{value}' is not a valid size. "
-                f"Allowed values: {', '.join(sorted(valid_keys))}"
-            )
-        return value
+    def get_size(self, obj):
+        """Returns the size name string e.g. 'L TO 3XL'. Same as before."""
+        return obj.size_set.name if obj.size_set else ''
 
     def get_size_display(self, obj):
-        return obj.get_size_display()
+        """Returns the same name — no separate display label needed anymore."""
+        return obj.size_set.name if obj.size_set else ''
+
+    def get_set_breakdown(self, obj):
+        """Returns the breakdown string e.g. '1xL, 1xXL, 1xXXL, 1x3XL'."""
+        return obj.size_breakdown.breakdown_string if obj.size_breakdown else ''
 
     def get_margin_percentage(self, obj):
         try:
