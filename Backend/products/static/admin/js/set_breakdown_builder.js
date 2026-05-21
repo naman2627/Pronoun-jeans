@@ -41,16 +41,11 @@
     return map;
   }
 
-  function renderBuilder(sizeSelect) {
-    const row = sizeSelect.closest('tr, .dynamic-productvariation_set, fieldset');
-    if (!row) return;
-    const inputEl = row.querySelector('input[id*="set_breakdown"], input[name*="set_breakdown"]');
+  function renderBuilderIntoInput(inputEl, members) {
     if (!inputEl) return;
-    const sizeVal = sizeSelect.value;
-    const members = SET_MAP[sizeVal];
-    const existing = row.querySelector('.sb-builder');
+    const existing = inputEl.parentNode.querySelector('.sb-builder');
     if (existing) existing.remove();
-    if (!members) {
+    if (!members || members.length === 0) {
       inputEl.style.display = '';
       return;
     }
@@ -74,7 +69,7 @@
         const opt = document.createElement('option');
         opt.value = i;
         opt.textContent = i;
-        if (i === (existing_qtys[size] ?? 1)) opt.selected = true;
+        if (i === (existing_qtys[size] !== undefined ? existing_qtys[size] : 1)) opt.selected = true;
         qtySelect.appendChild(opt);
       }
       qtySelect.addEventListener('change', function () { syncToInput(builder, inputEl); });
@@ -86,6 +81,27 @@
     syncToInput(builder, inputEl);
   }
 
+  // ── MODE 1: ProductVariation inline on Product page ───────────────────────
+  // Watches the size_set dropdown and renders builder into size_breakdown input
+
+  function renderBuilder(sizeSelect) {
+    const row = sizeSelect.closest('tr, .dynamic-productvariation_set, fieldset');
+    if (!row) return;
+    const inputEl = row.querySelector('input[id*="size_breakdown"], input[name*="size_breakdown"]');
+    if (!inputEl) return;
+    const sizeVal = sizeSelect.options[sizeSelect.selectedIndex]
+      ? sizeSelect.options[sizeSelect.selectedIndex].text.trim()
+      : '';
+    const members = SET_MAP[sizeVal];
+    const existing = row.querySelector('.sb-builder');
+    if (existing) existing.remove();
+    if (!members) {
+      inputEl.style.display = '';
+      return;
+    }
+    renderBuilderIntoInput(inputEl, members);
+  }
+
   function attachToSelect(sel) {
     if (sel.dataset.sbAttached) return;
     sel.dataset.sbAttached = '1';
@@ -95,8 +111,8 @@
 
   function attachAll() {
     document.querySelectorAll(
-      'select[id*="size"][id*="productvariation"], select[name*="size"][name*="productvariation"],' +
-      'tr select[id$="-size"], tr select[name$="-size"]'
+      'select[id*="size_set"][id*="productvariation"], select[name*="size_set"][name*="productvariation"],' +
+      'tr select[id$="-size_set"], tr select[name$="-size_set"]'
     ).forEach(attachToSelect);
   }
 
@@ -107,16 +123,64 @@
       mutations.forEach(function (m) {
         m.addedNodes.forEach(function (node) {
           if (node.nodeType !== 1) return;
-          const selects = node.querySelectorAll ? node.querySelectorAll('select[id*="size"], select[name*="size"]') : [];
+          const selects = node.querySelectorAll
+            ? node.querySelectorAll('select[id*="size_set"], select[name*="size_set"]')
+            : [];
           selects.forEach(attachToSelect);
-          if (node.matches && node.matches('select[id*="size"], select[name*="size"]')) attachToSelect(node);
+          if (node.matches && node.matches('select[id*="size_set"], select[name*="size_set"]')) {
+            attachToSelect(node);
+          }
         });
       });
     });
     observer.observe(target, { childList: true, subtree: true });
   }
 
-  function init() { attachAll(); observeInline(); }
+  // ── MODE 2: SizeSet edit page — breakdown inline rows ─────────────────────
+  // Reads the Name field of the SizeSet and renders builder into each
+  // breakdown_string input in the SizeSetBreakdown inline
+
+  function getSizeSetName() {
+    const nameInput = document.querySelector('input[name="name"], #id_name');
+    return nameInput ? nameInput.value.trim() : '';
+  }
+
+  function renderBreakdownBuilders() {
+    const sizeSetName = getSizeSetName();
+    const members = SET_MAP[sizeSetName];
+    document.querySelectorAll(
+      'input[id*="breakdown_string"], input[name*="breakdown_string"]'
+    ).forEach(function (inputEl) {
+      if (inputEl.dataset.sbAttached) return;
+      inputEl.dataset.sbAttached = '1';
+      renderBuilderIntoInput(inputEl, members || []);
+    });
+  }
+
+  function observeBreakdownInline() {
+    const target = document.querySelector('#sizesetbreakdown_set-group, .inline-group, #content');
+    if (!target) return;
+    const observer = new MutationObserver(function () {
+      renderBreakdownBuilders();
+    });
+    observer.observe(target, { childList: true, subtree: true });
+
+    const nameInput = document.querySelector('input[name="name"], #id_name');
+    if (nameInput) {
+      nameInput.addEventListener('input', function () {
+        document.querySelectorAll('input[id*="breakdown_string"], input[name*="breakdown_string"]')
+          .forEach(function (el) { delete el.dataset.sbAttached; });
+        renderBreakdownBuilders();
+      });
+    }
+  }
+
+  function init() {
+    attachAll();
+    observeInline();
+    renderBreakdownBuilders();
+    observeBreakdownInline();
+  }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
