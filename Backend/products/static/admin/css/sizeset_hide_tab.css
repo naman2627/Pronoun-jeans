@@ -1,0 +1,13 @@
+/* Hide the auto-generated "Size Set Breakdowns" tab from Jazzmin.
+   The inline still exists in the DOM for Django form submission.
+   The custom JS builder renders the breakdown UI on the General tab instead. */
+   a[href="#size-set-breakdowns-tab"],
+   a[href*="size-set-breakdowns"],
+   li:has(> a[href="#size-set-breakdowns-tab"]) {
+     display: none !important;
+   }
+   
+   /* Also hide the tab panel itself — our JS renders the UI elsewhere */
+   #size-set-breakdowns-tab {
+     display: none !important;
+   }

@@ -50,12 +50,14 @@ class HeroSlideAdmin(admin.ModelAdmin):
 # ── Size Set Admin ────────────────────────────────────────────────────────────
 
 class SizeSetBreakdownInline(admin.TabularInline):
-    model         = SizeSetBreakdown
-    extra         = 1
-    fields        = ['label', 'breakdown_string']
-    # Jazzmin puts inlines on a separate tab by default.
-    # Setting tab=None or using show_change_link=False keeps it on the main tab.
-    show_change_link = False
+    """
+    Kept purely for Django's management form (TOTAL_FORMS, hidden inputs etc).
+    The visual UI is replaced by the custom JS builder injected on the General tab.
+    The tab itself is hidden via CSS injected in SizeSetAdmin.Media.
+    """
+    model  = SizeSetBreakdown
+    extra  = 1
+    fields = ['label', 'breakdown_string']
 
 
 @admin.register(SizeSet)
@@ -65,8 +67,6 @@ class SizeSetAdmin(admin.ModelAdmin):
     ordering      = ['order', 'name']
     inlines       = [SizeSetBreakdownInline]
 
-    # Jazzmin uses fieldsets to control tab grouping.
-    # Putting everything in one fieldset with no title keeps it all on General tab.
     fieldsets = (
         (None, {
             'fields': ('name', 'is_active', 'order'),
@@ -78,7 +78,12 @@ class SizeSetAdmin(admin.ModelAdmin):
     breakdown_count.short_description = 'Breakdowns'
 
     class Media:
-        js = ('admin/js/set_breakdown_builder.js',)
+        js  = ('admin/js/set_breakdown_builder.js',)
+        css = {
+            # Hide the "Size Set Breakdowns" tab that Jazzmin auto-generates
+            # The inline still exists for form submission — just not visible as a tab
+            'all': ('admin/css/sizeset_hide_tab.css',),
+        }
 
 
 # ── Variation Form ────────────────────────────────────────────────────────────
