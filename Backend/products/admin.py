@@ -47,12 +47,12 @@ class HeroSlideAdmin(admin.ModelAdmin):
     preview.short_description = 'Preview'
 
 
-# ── Size Set Admin ─────────────────────────────────────────────────────────────
+# ── Size Set Admin ────────────────────────────────────────────────────────────
 
 class SizeSetBreakdownInline(admin.TabularInline):
-    model   = SizeSetBreakdown
-    extra   = 1
-    fields  = ['label', 'breakdown_string']
+    model  = SizeSetBreakdown
+    extra  = 1
+    fields = ['label', 'breakdown_string']
 
 
 @admin.register(SizeSet)
@@ -66,16 +66,14 @@ class SizeSetAdmin(admin.ModelAdmin):
         return obj.breakdowns.count()
     breakdown_count.short_description = 'Breakdowns'
 
+    # ── JS loads on the SizeSet add/edit page ─────────────────────────────
+    class Media:
+        js = ('admin/js/set_breakdown_builder.js',)
+
 
 # ── Variation Form ────────────────────────────────────────────────────────────
 
 class ProductVariationForm(forms.ModelForm):
-    """
-    Dynamically filters the size_breakdown dropdown to only show
-    breakdowns that belong to the currently selected size_set.
-    On new rows the full list is shown; on save Django validates the FK.
-    """
-
     class Meta:
         model  = ProductVariation
         fields = '__all__'
@@ -83,22 +81,17 @@ class ProductVariationForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Limit breakdown choices to the selected size_set's breakdowns
         instance = kwargs.get('instance')
         if instance and instance.size_set_id:
             self.fields['size_breakdown'].queryset = (
                 SizeSetBreakdown.objects.filter(size_set_id=instance.size_set_id)
             )
         else:
-            # New row — show all breakdowns grouped by size set
             self.fields['size_breakdown'].queryset = (
                 SizeSetBreakdown.objects.select_related('size_set').all()
             )
 
-        # Limit size_set to active sets only
         self.fields['size_set'].queryset = SizeSet.objects.filter(is_active=True)
-
-        # Style the dropdowns
         self.fields['size_set'].widget.attrs.update({'style': 'min-width:140px;'})
         self.fields['size_breakdown'].widget.attrs.update({'style': 'min-width:200px;'})
 
@@ -116,20 +109,18 @@ class ProductVariationInline(admin.TabularInline):
     model  = ProductVariation
     form   = ProductVariationForm
     extra  = 0
-
-    # Left = most important, right = less priority
     fields = [
-        'size_set',         # 1st — most important
-        'color_palette',    # 2nd
-        'sku',              # 3rd
-        'b2b_price',        # 4th
-        'size_breakdown',   # 5th
-        'per_piece_price',  # 6th
-        'mrp',              # 7th
-        'mrp_per_piece',    # 8th
-        'stock_quantity',   # 9th
-        'image',            # 10th
-        'color',            # last — read-only, auto-filled
+        'size_set',
+        'color_palette',
+        'sku',
+        'b2b_price',
+        'size_breakdown',
+        'per_piece_price',
+        'mrp',
+        'mrp_per_piece',
+        'stock_quantity',
+        'image',
+        'color',
     ]
     readonly_fields = ['color']
 
