@@ -6,8 +6,82 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'admin/css/admin_custom.css' %}">
+<style>
+  /* Force light mode by overriding Django's CSS custom properties.
+     Django's dark mode uses these variables — overriding them here
+     beats everything including dark_mode.css !important rules */
+  :root, [data-theme="dark"], [data-theme="light"] {
+    --primary:              #dc2626 !important;
+    --secondary:            #b91c1c !important;
+    --accent:               #dc2626 !important;
+    --primary-fg:           #fff !important;
+
+    --body-fg:              #1a1f36 !important;
+    --body-bg:              #f4f6f9 !important;
+    --body-loud-color:      #1a1f36 !important;
+    --body-quiet-color:     #6b7280 !important;
+
+    --header-color:         #fff !important;
+    --header-branding-color:#fff !important;
+    --header-bg:            #dc2626 !important;
+    --header-link-color:    #fff !important;
+
+    --breadcrumbs-fg:       #6b7280 !important;
+    --breadcrumbs-link-fg:  #4b5563 !important;
+    --breadcrumbs-bg:       #ffffff !important;
+
+    --link-fg:              #dc2626 !important;
+    --link-hover-color:     #b91c1c !important;
+    --link-selected-fg:     #dc2626 !important;
+
+    --hairline-color:       #e5e7eb !important;
+    --border-color:         #e5e7eb !important;
+
+    --error-fg:             #dc2626 !important;
+
+    --message-success-bg:   #f0fdf4 !important;
+    --message-warning-bg:   #fffbeb !important;
+    --message-error-bg:     #fef2f2 !important;
+
+    --darkened-bg:          #f8fafc !important;
+    --selected-bg:          #fef2f2 !important;
+    --selected-row:         #fef2f2 !important;
+
+    --button-fg:            #fff !important;
+    --button-bg:            #dc2626 !important;
+    --button-hover-bg:      #b91c1c !important;
+    --default-button-fg:    #fff !important;
+    --default-button-bg:    #dc2626 !important;
+    --default-button-hover-bg: #b91c1c !important;
+    --close-button-bg:      #dc2626 !important;
+    --close-button-hover-bg:#b91c1c !important;
+    --delete-button-bg:     #dc2626 !important;
+    --delete-button-hover-bg:#b91c1c !important;
+
+    --object-tools-fg:      #fff !important;
+    --object-tools-bg:      #1a1f36 !important;
+    --object-tools-hover-bg:#dc2626 !important;
+
+    --nav-sidebar-width:    250px !important;
+
+    --sidebar-width:        250px !important;
+    --sidebar-bg:           #ffffff !important;
+
+    --font-family-primary:  'Inter', system-ui, -apple-system, sans-serif !important;
+    --font-family-monospace: 'JetBrains Mono', 'Courier New', monospace !important;
+  }
+
+  /* Hide the dark mode toggle button */
+  button#toggle-nav-sidebar ~ * .theme-toggle,
+  #toolbar .theme-toggle,
+  [aria-label="Toggle color theme"],
+  button.theme-toggle {
+    display: none !important;
+  }
+</style>
 {% endblock %}
 
 {% block branding %}
 <h1 id="site-name"><a href="{% url 'admin:index' %}">Pronoun Jeans Admin</a></h1>
+{% endblock %}
 {% endblock %}
