@@ -1,22 +1,23 @@
 (function () {
   'use strict';
 
-  const SET_MAP = {
-    'S TO XXL':   ['S', 'M', 'L', 'XL', 'XXL'],
-    'L TO 2XL':   ['L', 'XL', 'XXL'],
-    'L TO 3XL':   ['L', 'XL', 'XXL', '3XL'],
-    'L TO 4XL':   ['L', 'XL', 'XXL', '3XL', '4XL'],
-    'L TO 5XL':   ['L', 'XL', 'XXL', '3XL', '4XL', '5XL'],
-    'M TO 3XL':   ['M', 'L', 'XL', 'XXL', '3XL'],
-    'M TO 4XL':   ['M', 'L', 'XL', 'XXL', '3XL', '4XL'],
-    '4XL TO 5XL': ['4XL', '5XL'],
-    '28 TO 34':   ['28', '30', '32', '34'],
-    '28 TO 36':   ['28', '30', '32', '34', '36'],
-    '30 TO 36':   ['30', '32', '34', '36'],
-    '30 TO 38':   ['30', '32', '34', '36', '38'],
-    '32 TO 38':   ['32', '34', '36', '38'],
-  };
+  // ── Master size order ─────────────────────────────────────────────────────
+  // This is the single source of truth for size ordering.
+  // From/To dropdowns are built from this list.
+  const ALL_SIZES = [
+    'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL',
+    '26', '28', '30', '32', '34', '36', '38', '40', '42', '44', '46',
+  ];
 
+  // ── Derive members between two sizes (inclusive) ──────────────────────────
+  function getMembersBetween(fromSize, toSize) {
+    const fromIdx = ALL_SIZES.indexOf(fromSize);
+    const toIdx   = ALL_SIZES.indexOf(toSize);
+    if (fromIdx === -1 || toIdx === -1 || fromIdx > toIdx) return [];
+    return ALL_SIZES.slice(fromIdx, toIdx + 1);
+  }
+
+  // ── Build breakdown string from builder element ───────────────────────────
   function buildBreakdownString(builderEl) {
     const parts = [];
     builderEl.querySelectorAll('.sb-item').forEach(function (item) {
@@ -41,6 +42,7 @@
     return map;
   }
 
+  // ── Render quantity picker pills into a hidden input ──────────────────────
   function renderBuilderIntoInput(inputEl, members) {
     if (!inputEl) return;
     const existing = inputEl.parentNode.querySelector('.sb-builder');
@@ -56,24 +58,24 @@
     builder.style.cssText = 'display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center;padding:4px 0;';
     members.forEach(function (size) {
       const item = document.createElement('span');
-      item.className = 'sb-item';
+      item.className    = 'sb-item';
       item.dataset.size = size;
       item.style.cssText = 'display:inline-flex;align-items:center;gap:3px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:2px 6px;font-size:12px;';
-      const label = document.createElement('span');
-      label.textContent = size + ':';
-      label.style.cssText = 'font-weight:600;color:#374151;white-space:nowrap;';
+      const lbl = document.createElement('span');
+      lbl.textContent  = size + ':';
+      lbl.style.cssText = 'font-weight:600;color:#374151;white-space:nowrap;';
       const qtySelect = document.createElement('select');
       qtySelect.className = 'sb-qty';
       qtySelect.style.cssText = 'border:none;background:transparent;font-size:12px;font-weight:700;color:#111827;cursor:pointer;padding:0 2px;outline:none;';
       for (let i = 0; i <= 5; i++) {
-        const opt = document.createElement('option');
-        opt.value = i;
+        const opt      = document.createElement('option');
+        opt.value      = i;
         opt.textContent = i;
         if (i === (existing_qtys[size] !== undefined ? existing_qtys[size] : 1)) opt.selected = true;
         qtySelect.appendChild(opt);
       }
       qtySelect.addEventListener('change', function () { syncToInput(builder, inputEl); });
-      item.appendChild(label);
+      item.appendChild(lbl);
       item.appendChild(qtySelect);
       builder.appendChild(item);
     });
@@ -81,105 +83,152 @@
     syncToInput(builder, inputEl);
   }
 
-  // ── MODE 1: ProductVariation inline on Product page ───────────────────────
-  // Watches the size_set dropdown and renders builder into size_breakdown input
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MODE 2: SizeSet edit/add page
+  // Injects From/To dropdowns, makes Name read-only, renders breakdown builder
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  function renderBuilder(sizeSelect) {
-    const row = sizeSelect.closest('tr, .dynamic-productvariation_set, fieldset');
-    if (!row) return;
-    const inputEl = row.querySelector('input[id*="size_breakdown"], input[name*="size_breakdown"]');
-    if (!inputEl) return;
-    const sizeVal = sizeSelect.options[sizeSelect.selectedIndex]
-      ? sizeSelect.options[sizeSelect.selectedIndex].text.trim()
-      : '';
-    const members = SET_MAP[sizeVal];
-    const existing = row.querySelector('.sb-builder');
-    if (existing) existing.remove();
-    if (!members) {
-      inputEl.style.display = '';
-      return;
+  function isSizeSetPage() {
+    return !!(document.querySelector('#id_name') &&
+              window.location.href.includes('/products/sizeset/'));
+  }
+
+  function getCurrentMembers() {
+    const fromSel = document.getElementById('sb-from-select');
+    const toSel   = document.getElementById('sb-to-select');
+    if (!fromSel || !toSel) return [];
+    return getMembersBetween(fromSel.value, toSel.value);
+  }
+
+  function updateNameField() {
+    const nameInput = document.getElementById('id_name');
+    const fromSel   = document.getElementById('sb-from-select');
+    const toSel     = document.getElementById('sb-to-select');
+    if (!nameInput || !fromSel || !toSel) return;
+    const from = fromSel.value;
+    const to   = toSel.value;
+    if (from && to) {
+      nameInput.value = from + ' TO ' + to;
+    } else {
+      nameInput.value = '';
     }
-    renderBuilderIntoInput(inputEl, members);
   }
 
-  function attachToSelect(sel) {
-    if (sel.dataset.sbAttached) return;
-    sel.dataset.sbAttached = '1';
-    sel.addEventListener('change', function () { renderBuilder(sel); });
-    renderBuilder(sel);
+  function refreshAllBreakdownBuilders() {
+    const members = getCurrentMembers();
+    // Reset attached flags so builders re-render with updated members
+    document.querySelectorAll('input[id*="breakdown_string"], input[name*="breakdown_string"]')
+      .forEach(function (el) {
+        delete el.dataset.sbAttached;
+        renderBuilderIntoInput(el, members);
+        el.dataset.sbAttached = '1';
+      });
   }
 
-  function attachAll() {
-    document.querySelectorAll(
-      'select[id*="size_set"][id*="productvariation"], select[name*="size_set"][name*="productvariation"],' +
-      'tr select[id$="-size_set"], tr select[name$="-size_set"]'
-    ).forEach(attachToSelect);
-  }
+  function injectFromToDropdowns() {
+    const nameInput = document.getElementById('id_name');
+    if (!nameInput || document.getElementById('sb-from-select')) return;
 
-  function observeInline() {
-    const target = document.querySelector('#productvariation_set-group, .inline-group, #content');
-    if (!target) return;
-    const observer = new MutationObserver(function (mutations) {
-      mutations.forEach(function (m) {
-        m.addedNodes.forEach(function (node) {
-          if (node.nodeType !== 1) return;
-          const selects = node.querySelectorAll
-            ? node.querySelectorAll('select[id*="size_set"], select[name*="size_set"]')
-            : [];
-          selects.forEach(attachToSelect);
-          if (node.matches && node.matches('select[id*="size_set"], select[name*="size_set"]')) {
-            attachToSelect(node);
-          }
-        });
+    // Make the name field read-only and styled as such
+    nameInput.readOnly = true;
+    nameInput.style.cssText += 'background:#f9fafb;color:#6b7280;cursor:not-allowed;';
+
+    // Parse existing name to pre-select From/To if editing
+    const existingName = nameInput.value.trim();
+    let existingFrom = '', existingTo = '';
+    const match = existingName.match(/^(.+)\s+TO\s+(.+)$/i);
+    if (match) {
+      existingFrom = match[1].trim();
+      existingTo   = match[2].trim();
+    }
+
+    // Build the wrapper
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin-bottom:8px;';
+
+    const fromLabel = document.createElement('span');
+    fromLabel.textContent  = 'From:';
+    fromLabel.style.cssText = 'font-weight:600;font-size:13px;color:#374151;';
+
+    const fromSel = document.createElement('select');
+    fromSel.id = 'sb-from-select';
+    fromSel.style.cssText = 'border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;font-size:13px;background:#fff;';
+
+    const toLabel = document.createElement('span');
+    toLabel.textContent  = 'To:';
+    toLabel.style.cssText = 'font-weight:600;font-size:13px;color:#374151;margin-left:8px;';
+
+    const toSel = document.createElement('select');
+    toSel.id = 'sb-to-select';
+    toSel.style.cssText = 'border:1px solid #d1d5db;border-radius:6px;padding:4px 8px;font-size:13px;background:#fff;';
+
+    // Populate both selects with ALL_SIZES
+    [fromSel, toSel].forEach(function (sel) {
+      const blank = document.createElement('option');
+      blank.value       = '';
+      blank.textContent = '— select —';
+      sel.appendChild(blank);
+      ALL_SIZES.forEach(function (size) {
+        const opt      = document.createElement('option');
+        opt.value      = size;
+        opt.textContent = size;
+        sel.appendChild(opt);
       });
     });
-    observer.observe(target, { childList: true, subtree: true });
-  }
 
-  // ── MODE 2: SizeSet edit page — breakdown inline rows ─────────────────────
-  // Reads the Name field of the SizeSet and renders builder into each
-  // breakdown_string input in the SizeSetBreakdown inline
+    // Pre-select if editing an existing SizeSet
+    if (existingFrom) fromSel.value = existingFrom;
+    if (existingTo)   toSel.value   = existingTo;
 
-  function getSizeSetName() {
-    const nameInput = document.querySelector('input[name="name"], #id_name');
-    return nameInput ? nameInput.value.trim() : '';
-  }
-
-  function renderBreakdownBuilders() {
-    const sizeSetName = getSizeSetName();
-    const members = SET_MAP[sizeSetName];
-    document.querySelectorAll(
-      'input[id*="breakdown_string"], input[name*="breakdown_string"]'
-    ).forEach(function (inputEl) {
-      if (inputEl.dataset.sbAttached) return;
-      inputEl.dataset.sbAttached = '1';
-      renderBuilderIntoInput(inputEl, members || []);
+    // Wire up change handlers
+    fromSel.addEventListener('change', function () {
+      updateNameField();
+      refreshAllBreakdownBuilders();
     });
+    toSel.addEventListener('change', function () {
+      updateNameField();
+      refreshAllBreakdownBuilders();
+    });
+
+    wrapper.appendChild(fromLabel);
+    wrapper.appendChild(fromSel);
+    wrapper.appendChild(toLabel);
+    wrapper.appendChild(toSel);
+
+    // Insert above the name input
+    nameInput.parentNode.insertBefore(wrapper, nameInput);
   }
 
-  function observeBreakdownInline() {
-    const target = document.querySelector('#sizesetbreakdown_set-group, .inline-group, #content');
+  function initSizeSetPage() {
+    injectFromToDropdowns();
+    // Initial render of any existing breakdown rows
+    refreshAllBreakdownBuilders();
+
+    // Watch for new breakdown rows added via "Add another"
+    const target = document.querySelector('#content');
     if (!target) return;
     const observer = new MutationObserver(function () {
-      renderBreakdownBuilders();
+      refreshAllBreakdownBuilders();
     });
     observer.observe(target, { childList: true, subtree: true });
-
-    const nameInput = document.querySelector('input[name="name"], #id_name');
-    if (nameInput) {
-      nameInput.addEventListener('input', function () {
-        document.querySelectorAll('input[id*="breakdown_string"], input[name*="breakdown_string"]')
-          .forEach(function (el) { delete el.dataset.sbAttached; });
-        renderBreakdownBuilders();
-      });
-    }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MODE 1: ProductVariation inline on Product page
+  // Size set dropdown → filters breakdown dropdown (handled by Django form)
+  // No JS builder needed here — breakdown is chosen from existing options
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function isSizeSetPage_NOT() {
+    return !!(document.querySelector('#id_name') &&
+              window.location.href.includes('/products/sizeset/'));
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
   function init() {
-    attachAll();
-    observeInline();
-    renderBreakdownBuilders();
-    observeBreakdownInline();
+    if (isSizeSetPage()) {
+      initSizeSetPage();
+    }
   }
 
   if (document.readyState === 'loading') {
@@ -187,4 +236,5 @@
   } else {
     init();
   }
+
 })();
