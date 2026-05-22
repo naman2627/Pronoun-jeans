@@ -28,7 +28,7 @@ const Login = () => {
       if (decoded?.is_agent) {
         navigate('/agent', { replace: true });
       } else {
-        navigate(from || '/dashboard', { replace: true });
+        navigate(from || '/', { replace: true });
       }
     } catch {
       setError('Invalid email or password. Please try again.');
