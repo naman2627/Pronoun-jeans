@@ -3,11 +3,6 @@ from django.utils import timezone
 from .models import Cart, CartItem, Order, OrderItem, Commission, SampleOrder, Coupon
 
 
-class GlobalMediaMixin:
-    class Media:
-        css = {'all': ('admin/css/admin_custom.css',)}
-
-
 class CartItemInline(admin.TabularInline):
     model  = CartItem
     extra  = 0
@@ -25,7 +20,7 @@ class OrderItemInline(admin.TabularInline):
 
 
 @admin.register(Coupon)
-class CouponAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class CouponAdmin(admin.ModelAdmin):
     list_display  = ['code', 'discount_type', 'discount_value', 'min_order_value', 'is_active', 'valid_from', 'valid_to']
     list_filter   = ['is_active', 'discount_type']
     search_fields = ['code']
@@ -42,13 +37,13 @@ class CouponAdmin(GlobalMediaMixin, admin.ModelAdmin):
 
 
 @admin.register(Cart)
-class CartAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class CartAdmin(admin.ModelAdmin):
     list_display = ['user', 'created_at', 'updated_at']
     inlines      = [CartItemInline]
 
 
 @admin.register(Order)
-class OrderAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class OrderAdmin(admin.ModelAdmin):
     list_display    = ['id', 'user', 'placed_by_agent', 'status', 'total_amount', 'discount_amount', 'coupon', 'courier_name', 'tracking_number', 'created_at']
     list_filter     = ['status', 'payment_method', 'payment_status']
     search_fields   = ['user__email', 'tracking_number', 'courier_name']
@@ -82,7 +77,7 @@ def mark_as_paid(modeladmin, request, queryset):
 
 
 @admin.register(Commission)
-class CommissionAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class CommissionAdmin(admin.ModelAdmin):
     list_display    = ['id', 'agent', 'order', 'is_bonus', 'buyer', 'amount', 'commission_percentage', 'status', 'created_at', 'paid_at']
     list_filter     = ['status', 'agent']
     search_fields   = ['agent__email', 'order__id', 'order__user__email']
@@ -102,7 +97,7 @@ class CommissionAdmin(GlobalMediaMixin, admin.ModelAdmin):
 
 
 @admin.register(SampleOrder)
-class SampleOrderAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class SampleOrderAdmin(admin.ModelAdmin):
     list_display  = ['design_number', 'buyer', 'agent', 'rate', 'date', 'created_at']
     list_filter   = ['agent', 'date']
     search_fields = ['design_number', 'buyer__email', 'agent__email']

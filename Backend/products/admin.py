@@ -29,20 +29,10 @@ def _unique_sku(base_sku):
     return sku
 
 
-# ── Inject custom CSS globally into every admin page ─────────────────────────
-# This replaces Jazzmin's styling with our own clean design.
-# The CSS file lives at products/static/admin/css/admin_custom.css
-
-class GlobalMediaMixin:
-    """Mixin that injects our custom CSS on every ModelAdmin page."""
-    class Media:
-        css = {'all': ('admin/css/admin_custom.css',)}
-
-
 # ── Hero Slides ───────────────────────────────────────────────────────────────
 
 @admin.register(HeroSlide)
-class HeroSlideAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class HeroSlideAdmin(admin.ModelAdmin):
     list_display  = ['__str__', 'order', 'is_active', 'preview']
     list_editable = ['order', 'is_active']
     ordering      = ['order', 'id']
@@ -72,7 +62,7 @@ class SizeSetBreakdownInline(admin.TabularInline):
 
 
 @admin.register(SizeSet)
-class SizeSetAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class SizeSetAdmin(admin.ModelAdmin):
     list_display  = ['name', 'is_active', 'order', 'breakdown_count']
     list_editable = ['is_active', 'order']
     ordering      = ['order', 'name']
@@ -83,8 +73,7 @@ class SizeSetAdmin(GlobalMediaMixin, admin.ModelAdmin):
     breakdown_count.short_description = 'Breakdowns'
 
     class Media:
-        css = {'all': ('admin/css/admin_custom.css',)}
-        js  = ('admin/js/set_breakdown_builder.js',)
+        js = ('admin/js/set_breakdown_builder.js',)
 
 
 # ── Variation Form ────────────────────────────────────────────────────────────
@@ -141,8 +130,7 @@ class ProductVariationInline(admin.TabularInline):
     readonly_fields = ['color']
 
     class Media:
-        css = {'all': ('admin/css/admin_custom.css',)}
-        js  = ('admin/js/set_breakdown_builder.js',)
+        js = ('admin/js/set_breakdown_builder.js',)
 
 
 # ── Clone action ──────────────────────────────────────────────────────────────
@@ -222,7 +210,7 @@ def clone_products(modeladmin, request, queryset):
 # ── Other Admin Registrations ─────────────────────────────────────────────────
 
 @admin.register(Color)
-class ColorAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class ColorAdmin(admin.ModelAdmin):
     list_display  = ['name', 'hex_code', 'swatch']
     search_fields = ['name']
     ordering      = ['name']
@@ -238,14 +226,14 @@ class ColorAdmin(GlobalMediaMixin, admin.ModelAdmin):
 
 
 @admin.register(Category)
-class CategoryAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class CategoryAdmin(admin.ModelAdmin):
     list_display        = ['name', 'slug']
     search_fields       = ['name', 'slug']
     prepopulated_fields = {'slug': ('name',)}
 
 
 @admin.register(ProductImage)
-class ProductImageAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class ProductImageAdmin(admin.ModelAdmin):
     list_display  = ['product', 'alt_text', 'order']
     list_filter   = ['product']
     search_fields = ['product__name', 'alt_text']
@@ -253,7 +241,7 @@ class ProductImageAdmin(GlobalMediaMixin, admin.ModelAdmin):
 
 
 @admin.register(Product)
-class ProductAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class ProductAdmin(admin.ModelAdmin):
     list_display        = ['name', 'category', 'is_active', 'moq', 'created_at']
     list_filter         = ['is_active', 'category']
     search_fields       = ['name', 'slug']
@@ -273,7 +261,7 @@ class ProductAdmin(GlobalMediaMixin, admin.ModelAdmin):
 
 
 @admin.register(ProductVariation)
-class ProductVariationAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class ProductVariationAdmin(admin.ModelAdmin):
     form          = ProductVariationForm
     list_display  = ['sku', 'product', 'size_set', 'color', 'b2b_price', 'per_piece_price', 'mrp', 'mrp_per_piece', 'stock_quantity']
     list_filter   = ['product__category', 'size_set']

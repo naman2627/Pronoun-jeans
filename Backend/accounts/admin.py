@@ -3,20 +3,15 @@ from django.contrib.auth.admin import UserAdmin
 from .models import CustomUser, AgentProfile, AgentPayment, Address
 
 
-class GlobalMediaMixin:
-    class Media:
-        css = {'all': ('admin/css/admin_custom.css',)}
-
-
 @admin.register(AgentProfile)
-class AgentProfileAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class AgentProfileAdmin(admin.ModelAdmin):
     list_display  = ['user', 'agent_code', 'commission_percentage']
     search_fields = ['user__email', 'agent_code']
     ordering      = ['agent_code']
 
 
 @admin.register(AgentPayment)
-class AgentPaymentAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class AgentPaymentAdmin(admin.ModelAdmin):
     list_display  = ['agent', 'amount', 'paid_on', 'utr_reference', 'created_at']
     list_filter   = ['agent', 'paid_on']
     search_fields = ['agent__email', 'utr_reference']
@@ -29,7 +24,7 @@ class AgentPaymentAdmin(GlobalMediaMixin, admin.ModelAdmin):
 
 
 @admin.register(CustomUser)
-class CustomUserAdmin(GlobalMediaMixin, UserAdmin):
+class CustomUserAdmin(UserAdmin):
     list_display  = [
         'email', 'company_name', 'phone_number', 'gst_number',
         'is_verified_b2b', 'is_agent', 'agent_can_order', 'assigned_agent', 'is_staff', 'date_joined',
@@ -63,7 +58,7 @@ class CustomUserAdmin(GlobalMediaMixin, UserAdmin):
 
 
 @admin.register(Address)
-class AddressAdmin(GlobalMediaMixin, admin.ModelAdmin):
+class AddressAdmin(admin.ModelAdmin):
     list_display  = ['user', 'address_line_1', 'city', 'state', 'pincode', 'is_default_shipping', 'is_default_billing']
     list_filter   = ['state', 'is_default_shipping', 'is_default_billing']
     search_fields = ['user__email', 'city', 'pincode']
