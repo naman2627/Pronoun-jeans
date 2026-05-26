@@ -1,7 +1,7 @@
 from decimal import Decimal
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
-from django.db.models import Sum
+from django.db.models import F, Sum
 
 
 @receiver(post_save, sender='orders.Order')
@@ -83,4 +83,52 @@ def _check_and_award_bonus(agent, agent_profile):
             commission_percentage= Decimal('0.00'),
             amount               = BONUS_AMOUNT,
             status               = Commission.Status.PENDING,
+        )
+
+
+# ── Stock management ──────────────────────────────────────────────────────────
+
+@receiver(pre_save, sender='orders.Order')
+def capture_previous_order_status(sender, instance, **kwargs):
+    """Store previous status on the instance so post_save can detect transitions."""
+    if instance.pk:
+        try:
+            instance._prev_status = (
+                sender.objects.values_list('status', flat=True).get(pk=instance.pk)
+            )
+        except sender.DoesNotExist:
+            instance._prev_status = None
+    else:
+        instance._prev_status = None
+
+
+@receiver(post_save, sender='orders.Order')
+def restore_stock_on_cancellation(sender, instance, created, **kwargs):
+    """
+    When an order transitions to CANCELLED, restore stock for all its items —
+    but only if stock was actually decremented for this order.
+
+    UPI orders: stock decremented at order creation → always restore.
+    Razorpay orders: stock decremented only after payment verification
+                     (payment_status=PAID) → restore only then.
+    """
+    if created:
+        return
+
+    prev = getattr(instance, '_prev_status', None)
+    if prev == instance.status or instance.status != instance.Status.CANCELLED:
+        return
+
+    is_upi = instance.payment_method == instance.PaymentMethod.DIRECT_UPI
+    is_razorpay_paid = (
+        instance.payment_method == instance.PaymentMethod.RAZORPAY
+        and instance.payment_status == instance.PaymentStatus.PAID
+    )
+    if not (is_upi or is_razorpay_paid):
+        return
+
+    from products.models import ProductVariation
+    for item in instance.items.all():
+        ProductVariation.objects.filter(pk=item.variation_id).update(
+            stock_quantity=F('stock_quantity') + item.quantity
         )

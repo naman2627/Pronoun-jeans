@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
 from django.utils import timezone
 
 from .models import Cart, CartItem, Order, OrderItem, Commission, SampleOrder, Coupon
@@ -140,6 +140,11 @@ class CartItemUpdateView(APIView):
             if qty > 0:
                 try:
                     variation = ProductVariation.objects.get(pk=item.get('variation_id'), product=product)
+                    if qty > variation.stock_quantity:
+                        return Response(
+                            {'error': f'Only {variation.stock_quantity} sets available for {variation.sku}.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
                     CartItem.objects.update_or_create(
                         cart=cart, variation=variation, defaults={'quantity': qty}
                     )
@@ -155,7 +160,7 @@ class CartItemDetailView(APIView):
     @transaction.atomic
     def patch(self, request, pk):
         try:
-            item = CartItem.objects.select_related('cart').get(pk=pk, cart__user=request.user)
+            item = CartItem.objects.select_related('cart', 'variation').get(pk=pk, cart__user=request.user)
         except CartItem.DoesNotExist:
             return Response({'error': 'Cart item not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -163,6 +168,11 @@ class CartItemDetailView(APIView):
         if quantity <= 0:
             item.delete()
         else:
+            if quantity > item.variation.stock_quantity:
+                return Response(
+                    {'error': f'Only {item.variation.stock_quantity} sets available for {item.variation.sku}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             item.quantity = quantity
             item.save()
 
@@ -326,6 +336,22 @@ class DirectUPICheckoutView(APIView):
         coupon, coupon_pct = _resolve_coupon(coupon_code, subtotal)
         upi_pct            = Decimal('0.01') if payment_plan == 'full' else Decimal('0')
         calc               = calc_gst_split(subtotal, coupon_pct=coupon_pct, upi_pct=upi_pct)
+
+        # Lock variations and validate stock atomically
+        variation_ids = [item.variation_id for item in cart_items]
+        qty_map       = {item.variation_id: item.quantity for item in cart_items}
+        locked_vars   = {
+            v.id: v for v in
+            ProductVariation.objects.select_for_update().filter(id__in=variation_ids)
+        }
+        for var_id, qty in qty_map.items():
+            lv = locked_vars[var_id]
+            if qty > lv.stock_quantity:
+                return Response(
+                    {'error': f'Only {lv.stock_quantity} sets available for {lv.sku}.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
         grand_total        = calc['grand_total']
         pre_shipping       = calc['pre_shipping']
         shipping           = calc['shipping']
@@ -373,6 +399,12 @@ class DirectUPICheckoutView(APIView):
                       quantity=item.quantity, price=item.variation.b2b_price)
             for item in cart_items
         ])
+
+        # Decrement stock for each variation
+        for var_id, qty in qty_map.items():
+            ProductVariation.objects.filter(pk=var_id).update(
+                stock_quantity=F('stock_quantity') - qty
+            )
 
         cart.items.all().delete()
 
@@ -430,6 +462,14 @@ class RazorpayCreateOrderView(APIView):
         coupon, coupon_pct = _resolve_coupon(coupon_code, subtotal)
         calc               = calc_gst_split(subtotal, coupon_pct=coupon_pct)
         grand_total        = calc['grand_total']
+
+        # Pre-flight stock check (stock committed at payment verification)
+        for item in cart_items:
+            if item.quantity > item.variation.stock_quantity:
+                return Response(
+                    {'error': f'Only {item.variation.stock_quantity} sets available for {item.variation.sku}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         try:
             client         = get_razorpay_client()
@@ -504,6 +544,26 @@ class RazorpayVerifyPaymentView(APIView):
             order = Order.objects.get(razorpay_order_id=razorpay_order_id)
         except Order.DoesNotExist:
             return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Lock variations and decrement stock now that payment is confirmed
+        order_items = list(order.items.select_related('variation').all())
+        var_ids     = [oi.variation_id for oi in order_items]
+        rz_qty_map  = {oi.variation_id: oi.quantity for oi in order_items}
+        locked_vars = {
+            v.id: v for v in
+            ProductVariation.objects.select_for_update().filter(id__in=var_ids)
+        }
+        for oi in order_items:
+            lv = locked_vars[oi.variation_id]
+            if oi.quantity > lv.stock_quantity:
+                return Response(
+                    {'error': f'Insufficient stock for {lv.sku}. Payment received — please contact support.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+        for var_id, qty in rz_qty_map.items():
+            ProductVariation.objects.filter(pk=var_id).update(
+                stock_quantity=F('stock_quantity') - qty
+            )
 
         order.razorpay_payment_id = razorpay_payment_id
         order.razorpay_signature  = razorpay_signature
