@@ -717,7 +717,7 @@ class AgentEligibleBuyersView(APIView):
 
 
 class AgentSampleOrdersListView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAgent]
     serializer_class   = SampleOrderSerializer
 
     def get_queryset(self):
@@ -726,11 +726,15 @@ class AgentSampleOrdersListView(generics.ListCreateAPIView):
         ).select_related('buyer', 'agent').order_by('-date')
 
     def perform_create(self, serializer):
+        buyer = serializer.validated_data.get('buyer')
+        if not self.request.user.assigned_buyers.filter(pk=buyer.pk).exists():
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Buyer is not assigned to you.')
         serializer.save(agent=self.request.user)
 
 
 class AgentOrdersListView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAgent]
     serializer_class   = OrderSerializer
 
     def get_queryset(self):
@@ -742,7 +746,7 @@ class AgentOrdersListView(generics.ListAPIView):
 
 
 class AgentOrderTrackingUpdateView(generics.UpdateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAgent]
     serializer_class   = OrderTrackingUpdateSerializer
     http_method_names  = ['patch']
 

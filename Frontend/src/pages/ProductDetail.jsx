@@ -267,22 +267,39 @@ const ProductDetail = () => {
           <div className="w-full lg:w-96 xl:w-[420px] shrink-0">
             <ZoomableImage src={mainImage} alt={product.name} />
 
-            {product.gallery_images?.length > 0 && (
-              <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
-                {product.image && (
-                  <button onClick={() => setMainImage(product.image)}
-                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === product.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
-                    <img src={product.image} alt="Main" className="w-full h-full object-cover" />
-                  </button>
-                )}
-                {product.gallery_images.map(img => (
-                  <button key={img.id} onClick={() => setMainImage(img.image)}
-                    className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === img.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
-                    <img src={img.image} alt={img.alt_text || ''} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
+            {(() => {
+              const colorVars = activeColor
+                ? product.variations.filter(v => (v.color_name || v.color) === activeColor && v.image)
+                : [];
+              if (colorVars.length === 0 && !product.gallery_images?.length) return null;
+              return (
+                <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
+                  {colorVars.length > 0 ? (
+                    colorVars.map(v => (
+                      <button key={v.id} onClick={() => setMainImage(v.image)}
+                        className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === v.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
+                        <img src={v.image} alt={v.size || v.color_name || ''} className="w-full h-full object-cover" />
+                      </button>
+                    ))
+                  ) : (
+                    <>
+                      {product.image && (
+                        <button onClick={() => setMainImage(product.image)}
+                          className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === product.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
+                          <img src={product.image} alt="Main" className="w-full h-full object-cover" />
+                        </button>
+                      )}
+                      {product.gallery_images.map(img => (
+                        <button key={img.id} onClick={() => setMainImage(img.image)}
+                          className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === img.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
+                          <img src={img.image} alt={img.alt_text || ''} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="mt-4 space-y-3">
               <div>

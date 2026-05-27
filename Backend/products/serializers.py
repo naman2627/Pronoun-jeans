@@ -79,7 +79,12 @@ class ProductVariationSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        if not (request and request.user and request.user.is_authenticated):
+        user = request.user if request else None
+        can_see_prices = (
+            user and user.is_authenticated and
+            (user.is_verified_b2b or user.is_agent or user.is_staff)
+        )
+        if not can_see_prices:
             for field in ('set_price', 'b2b_price', 'per_piece_price', 'mrp', 'mrp_per_piece', 'margin_percentage'):
                 data[field] = None
         return data
