@@ -46,3 +46,18 @@
     box-shadow: none;
     margin-bottom: 0;
 }
+
+/* --------------------------------------------------------------------------
+   FIX: UI Builder panel (.control-sidebar) stretches the CSS Grid auto column
+
+   When show_ui_builder=True, Jazzmin renders an <aside class="control-sidebar
+   ui-customiser"> as a direct child of .app-wrapper with position:static.
+   Being in-flow, the CSS Grid auto-places it in column 1 (sidebar slot) and
+   sizes that column to the panel's ~760px width — pushing main content right
+   by ~510px and creating a large gap. Taking it out of flow with
+   position:fixed prevents it from influencing grid column sizing.
+   show_ui_builder is now False; this rule is a safety net if re-enabled.
+   -------------------------------------------------------------------------- */
+.app-wrapper > .control-sidebar {
+    position: fixed !important;
+}

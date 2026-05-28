@@ -272,7 +272,7 @@ JAZZMIN_SETTINGS = {
     'custom_css':                   'admin/css/custom_admin.css',
     'custom_js':                    None,
     'use_google_fonts_cdn':         True,
-    'show_ui_builder':              True,   # Set False once you lock in colours
+    'show_ui_builder':              False,
     'changeform_format':            'horizontal_tabs',
     'changeform_format_overrides': {
         # Flat layout is cleaner for models with many inline rows
