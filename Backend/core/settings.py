@@ -157,7 +157,7 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM':            'user_id',
 }
 
-STATICFILES_DIRS = []
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
 BIGSHIP_USERNAME   = env('BIGSHIP_USERNAME',   default='')
 BIGSHIP_PASSWORD   = env('BIGSHIP_PASSWORD',   default='')
@@ -269,7 +269,7 @@ JAZZMIN_SETTINGS = {
 
     # ── Sidebar behaviour ──────────────────────────────────────────────────────
     'related_modal_active':         True,   # Open FK selects in a modal
-    'custom_css':                   None,
+    'custom_css':                   'admin/css/custom_admin.css',
     'custom_js':                    None,
     'use_google_fonts_cdn':         True,
     'show_ui_builder':              True,   # Set False once you lock in colours

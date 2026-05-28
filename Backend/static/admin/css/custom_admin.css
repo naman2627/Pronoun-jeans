@@ -1,0 +1,33 @@
+/* ============================================================================
+   Pronoun Jeans — Admin UI overrides
+   Loaded via JAZZMIN_SETTINGS['custom_css']
+   ============================================================================ */
+
+/* --------------------------------------------------------------------------
+   FIX: Excessive padding on nested fieldset cards (horizontal_tabs / collapsible)
+
+   Jazzmin's fieldset.html wraps every fieldset inside a card with .p-5
+   (padding: 3rem on all sides).  Combined with the outer card-body (1.25rem),
+   this creates ~80px of left whitespace before form fields — very visible on
+   empty add-pages.  Override to 1rem for a clean, tight layout.
+   -------------------------------------------------------------------------- */
+
+/* horizontal_tabs format: outer-card > card-body > [tabs] > tab-pane > inner-card > p-5 */
+#content-main .card .tab-pane .card [class*="p-5"],
+#content-main .card .tab-pane .card .card-body {
+    padding: 1rem !important;
+}
+
+/* collapsible format: jazzy-collapsible > card > card-body > inner-card > p-5 */
+#jazzy-collapsible .card .card-body .card [class*="p-5"],
+#jazzy-collapsible .card .card-body .card .card-body {
+    padding: 1rem !important;
+}
+
+/* Remove double border / shadow on the inner (nested) cards */
+#content-main .card .tab-pane .card,
+#jazzy-collapsible .card .card-body .card {
+    border: none;
+    box-shadow: none;
+    margin-bottom: 0;
+}
