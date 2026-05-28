@@ -136,7 +136,7 @@
     const nameInput = document.getElementById('id_name');
     if (!nameInput || document.getElementById('sb-from-select')) return;
 
-    nameInput.readOnly      = true;
+    nameInput.readOnly         = true;
     nameInput.style.background = '#e9ecef';
     nameInput.style.color      = '#6c757d';
     nameInput.style.cursor     = 'not-allowed';
@@ -174,21 +174,11 @@
       return lbl;
     }
 
-    // Inline-flex wrapper — guaranteed layout regardless of admin CSS
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;';
 
     const fromSel = makeSelect('sb-from-select', existingFrom);
     const toSel   = makeSelect('sb-to-select',   existingTo);
-
-    fromSel.addEventListener('change', function () {
-      updateNameField();
-      refreshAllBreakdownBuilders();
-    });
-    toSel.addEventListener('change', function () {
-      updateNameField();
-      refreshAllBreakdownBuilders();
-    });
 
     wrapper.appendChild(makeLabel('From:'));
     wrapper.appendChild(fromSel);
@@ -196,6 +186,31 @@
     wrapper.appendChild(toSel);
 
     nameInput.parentNode.insertBefore(wrapper, nameInput);
+
+    // ── Event binding ─────────────────────────────────────────────────────
+    // Jazzmin applies Select2 to ALL selects after DOMContentLoaded.
+    // Select2 fires jQuery change events — not native DOM events — so
+    // native addEventListener misses them. jQuery document-level delegation
+    // catches both native and jQuery-triggered change events reliably.
+    function onRangeChange() {
+      updateNameField();
+      refreshAllBreakdownBuilders();
+    }
+
+    if (window.jQuery) {
+      jQuery(document).on('change', '#sb-from-select', onRangeChange);
+      jQuery(document).on('change', '#sb-to-select',   onRangeChange);
+
+      // Destroy Select2 on our custom selects so they render as plain
+      // native dropdowns — the From/To pickers don't need Select2's search UI.
+      setTimeout(function () {
+        try { jQuery('#sb-from-select').select2('destroy'); } catch (e) {}
+        try { jQuery('#sb-to-select').select2('destroy'); } catch (e) {}
+      }, 300);
+    } else {
+      fromSel.addEventListener('change', onRangeChange);
+      toSel.addEventListener('change', onRangeChange);
+    }
   }
 
   // ── Watch for new inline rows added via "Add another" ────────────────────
