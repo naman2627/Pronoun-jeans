@@ -4,6 +4,21 @@
    ============================================================================ */
 
 /* --------------------------------------------------------------------------
+   FIX: Mobile layout — sidebar CSS Grid column collapses to 760px
+
+   On screens < 992px (Bootstrap lg breakpoint), the sidebar is
+   position:fixed with margin-left:-250px (off-screen). But the CSS Grid
+   auto column still reserves ~760px for it, squishing main content into
+   ~48px. Force the sidebar grid slot to 0 so main content gets full width.
+   The sidebar overlays content on mobile anyway (position:fixed).
+   -------------------------------------------------------------------------- */
+@media (max-width: 991.98px) {
+    .app-wrapper {
+        grid-template-columns: 0 1fr !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
    FIX: Excessive padding on nested fieldset cards (horizontal_tabs / collapsible)
 
    Jazzmin's fieldset.html wraps every fieldset inside a card with .p-5
