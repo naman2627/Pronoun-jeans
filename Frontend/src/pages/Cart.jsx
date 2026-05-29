@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import api from '../api/axios';
 import { useCartStore } from '../store/useCartStore';
+import { useAuthStore } from '../store/useAuthStore';
 
 const UPI_ID        = 'pronoun@kotak';
 const BUSINESS_NAME = 'Pronoun Jeans';
@@ -817,8 +818,9 @@ const CheckoutPanel = ({
 // ── Main Cart Component ───────────────────────────────────────────────────────
 
 const Cart = () => {
-  const navigate  = useNavigate();
-  const fetchCart = useCartStore((s) => s.fetchCart);
+  const navigate           = useNavigate();
+  const fetchCart          = useCartStore((s) => s.fetchCart);
+  const impersonatedBuyer  = useAuthStore((s) => s.impersonatedBuyer);
 
   const [items, setItems]                       = useState([]);
   const [imageMap, setImageMap]                 = useState({});   // { [sku]: imageUrl }
@@ -844,8 +846,9 @@ const Cart = () => {
   const { saving, scheduleUpdate } = useQtyUpdate(showToast, fetchCart);
 
   useEffect(() => {
+    const cartUrl = impersonatedBuyer ? `orders/cart/?buyer_id=${impersonatedBuyer.id}` : 'orders/cart/';
     Promise.all([
-      api.get('orders/cart/'),
+      api.get(cartUrl),
       api.get('accounts/addresses/'),
       api.get('orders/coupons/active/'),
     ]).then(([cartRes, addrRes, couponRes]) => {
@@ -868,7 +871,7 @@ const Cart = () => {
       }
     }).catch(() => showToast('Failed to load cart.', 'error'))
       .finally(() => setLoading(false));
-  }, [showToast]);
+  }, [showToast, impersonatedBuyer]);
 
   const handleQtyChange = useCallback((cartItemId, newQty) => {
     let snapshot;
@@ -893,6 +896,7 @@ const Cart = () => {
       formData.append('coupon_code', couponData?.coupon_code || '');
       if (proofType === 'utr') formData.append('utr_number', utrNumber.trim());
       if (proofType === 'screenshot' && screenshotFile) formData.append('payment_screenshot', screenshotFile);
+      if (impersonatedBuyer) formData.append('buyer_id', impersonatedBuyer.id);
       const res = await api.post('orders/upi/checkout/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setItems([]); setCouponData(null); setUtrNumber(''); setScreenshotFile(null);
       fetchCart(); setSuccess(true);
@@ -911,7 +915,7 @@ const Cart = () => {
     if (!scriptLoaded) { showToast('Failed to load payment gateway.', 'error'); setRazorpayChecking(false); return; }
     let orderData;
     try {
-      const res = await api.post('orders/razorpay/create/', { shipping_address_id: shippingId, billing_address_id: billingId, coupon_code: couponData?.coupon_code || '' });
+      const res = await api.post('orders/razorpay/create/', { shipping_address_id: shippingId, billing_address_id: billingId, coupon_code: couponData?.coupon_code || '', ...(impersonatedBuyer ? { buyer_id: impersonatedBuyer.id } : {}) });
       orderData = res.data;
     } catch (err) { showToast(err.response?.data?.error || 'Failed to initiate payment.', 'error'); setRazorpayChecking(false); return; }
     const options = {

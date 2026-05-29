@@ -174,7 +174,7 @@ const TotalCell = ({ v, qty }) => {
 const ProductDetail = () => {
   const { slug }   = useParams();
   const navigate   = useNavigate();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, impersonatedBuyer } = useAuthStore();
   const fetchCart  = useCartStore((s) => s.fetchCart);
 
   const [product, setProduct]       = useState(null);
@@ -234,7 +234,7 @@ const ProductDetail = () => {
     if (totalSelected < product.moq) { setError(`Minimum order quantity is ${product.moq} units. You selected ${totalSelected}.`); return; }
     setSubmitting(true);
     try {
-      await api.post('orders/cart/update/', { product_id: product.id, items: itemsToAdd });
+      await api.post('orders/cart/update/', { product_id: product.id, items: itemsToAdd, ...(impersonatedBuyer ? { buyer_id: impersonatedBuyer.id } : {}) });
       setQuantities({});
       setShowToast(true);
       fetchCart();
