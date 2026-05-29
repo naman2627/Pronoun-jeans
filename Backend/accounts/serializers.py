@@ -113,7 +113,7 @@ class AgentBuyerSerializer(serializers.ModelSerializer):
         model  = CustomUser
         fields = [
             'id', 'email', 'full_name', 'company_name',
-            'phone_number', 'gst_number', 'is_verified_b2b',
+            'phone_number', 'gst_number', 'is_verified_b2b', 'agent_can_order',
         ]
 
     def get_full_name(self, obj):

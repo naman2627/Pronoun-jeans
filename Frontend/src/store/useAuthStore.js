@@ -12,13 +12,13 @@ const decodeToken = (token) => {
 
 const getInitialAuthState = () => {
   const token = localStorage.getItem('accessToken');
-  if (!token) return { user: null, isAuthenticated: false, isAgent: false };
+  if (!token) return { user: null, isAuthenticated: false, isAgent: false, impersonatedBuyer: null };
   const decoded = decodeToken(token);
   if (!decoded || decoded.exp * 1000 < Date.now()) {
     localStorage.clear();
-    return { user: null, isAuthenticated: false, isAgent: false };
+    return { user: null, isAuthenticated: false, isAgent: false, impersonatedBuyer: null };
   }
-  return { user: decoded, isAuthenticated: true, isAgent: decoded.is_agent ?? false };
+  return { user: decoded, isAuthenticated: true, isAgent: decoded.is_agent ?? false, impersonatedBuyer: null };
 };
 
 export const useAuthStore = create((set, get) => ({
@@ -27,13 +27,13 @@ export const useAuthStore = create((set, get) => ({
   initAuth: () => {
     const token = localStorage.getItem('accessToken');
     if (!token) {
-      set({ user: null, isAuthenticated: false, isAgent: false });
+      set({ user: null, isAuthenticated: false, isAgent: false, impersonatedBuyer: null });
       return;
     }
     const decoded = decodeToken(token);
     if (!decoded || decoded.exp * 1000 < Date.now()) {
       localStorage.clear();
-      set({ user: null, isAuthenticated: false, isAgent: false });
+      set({ user: null, isAuthenticated: false, isAgent: false, impersonatedBuyer: null });
       return;
     }
     set({
@@ -66,7 +66,10 @@ export const useAuthStore = create((set, get) => ({
       }
     }
     localStorage.clear();
-    set({ user: null, isAuthenticated: false, isAgent: false });
+    set({ user: null, isAuthenticated: false, isAgent: false, impersonatedBuyer: null });
     window.location.replace('/login');
   },
+
+  setImpersonatedBuyer: (buyer) => set({ impersonatedBuyer: buyer }),
+  clearImpersonatedBuyer: () => set({ impersonatedBuyer: null }),
 }));

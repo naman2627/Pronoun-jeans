@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Users, Loader, UserPlus, Search, X } from 'lucide-react';
+import { Users, Loader, UserPlus, Search, X, ShoppingCart } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import OnboardBuyerModal from '../../components/agent/OnboardBuyerModal';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const StatusPill = ({ verified }) =>
   verified ? (
@@ -20,6 +22,13 @@ const AgentBuyers = () => {
   const [error, setError]         = useState('');
   const [search, setSearch]       = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const navigate               = useNavigate();
+  const setImpersonatedBuyer   = useAuthStore(s => s.setImpersonatedBuyer);
+
+  const handleOrderForBuyer = (buyer) => {
+    setImpersonatedBuyer({ id: buyer.id, full_name: buyer.full_name, company_name: buyer.company_name });
+    navigate('/catalog');
+  };
 
   const fetchBuyers = useCallback(() => {
     setLoading(true);
@@ -115,7 +124,7 @@ const AgentBuyers = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm min-w-[700px]">
+            <table className="w-full text-left text-sm min-w-[820px]">
               <thead className="bg-gray-50 dark:bg-zinc-800/50 text-gray-500 dark:text-zinc-400 font-medium uppercase text-xs border-b border-gray-100 dark:border-white/5">
                 <tr>
                   <th className="px-5 py-3.5">Name</th>
@@ -124,6 +133,7 @@ const AgentBuyers = () => {
                   <th className="px-5 py-3.5">Phone</th>
                   <th className="px-5 py-3.5">GST</th>
                   <th className="px-5 py-3.5">Status</th>
+                  <th className="px-5 py-3.5">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,6 +148,19 @@ const AgentBuyers = () => {
                     <td className="px-5 py-4 text-gray-500 dark:text-zinc-400">{buyer.phone_number || '—'}</td>
                     <td className="px-5 py-4 text-gray-400 dark:text-zinc-500 font-mono text-xs">{buyer.gst_number || '—'}</td>
                     <td className="px-5 py-4"><StatusPill verified={buyer.is_verified_b2b} /></td>
+                    <td className="px-5 py-4">
+                      {buyer.agent_can_order ? (
+                        <button
+                          onClick={() => handleOrderForBuyer(buyer)}
+                          className="inline-flex items-center gap-1.5 bg-accent hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          Order for Buyer
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400 dark:text-zinc-600">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

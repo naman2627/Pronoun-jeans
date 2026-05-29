@@ -234,18 +234,43 @@ const Addresses = () => {
 };
 
 const AccountDetails = () => {
-  const [form, setForm]             = useState({ company_name: '', gst_number: '', phone_number: '', email: '' });
-  const [loading, setLoading]       = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess]       = useState(false);
-  const [error, setError]           = useState('');
+  const [form, setForm]                   = useState({ company_name: '', gst_number: '', phone_number: '', email: '' });
+  const [loading, setLoading]             = useState(true);
+  const [submitting, setSubmitting]       = useState(false);
+  const [success, setSuccess]             = useState(false);
+  const [error, setError]                 = useState('');
+  const [agentCanOrder, setAgentCanOrder] = useState(false);
+  const [hasAssignedAgent, setHasAssignedAgent] = useState(false);
+  const [togglingOOBO, setTogglingOOBO]   = useState(false);
+  const [ooboError, setOoboError]         = useState('');
 
   useEffect(() => {
-    api.get('accounts/profile/')
-      .then(res => setForm(res.data))
-      .catch(err => console.error(err))
+    Promise.all([
+      api.get('accounts/profile/'),
+      api.get('accounts/agent-can-order/').catch(() => null),
+    ]).then(([profileRes, ooboRes]) => {
+      setForm(profileRes.data);
+      if (ooboRes) {
+        setAgentCanOrder(ooboRes.data.agent_can_order ?? false);
+        setHasAssignedAgent(!!ooboRes.data.assigned_agent);
+      }
+    }).catch(err => console.error(err))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleToggleOOBO = async () => {
+    const newVal = !agentCanOrder;
+    setTogglingOOBO(true);
+    setOoboError('');
+    try {
+      const res = await api.patch('accounts/agent-can-order/', { agent_can_order: newVal });
+      setAgentCanOrder(res.data.agent_can_order);
+    } catch (err) {
+      setOoboError(err.response?.data?.error || 'Failed to update setting.');
+    } finally {
+      setTogglingOOBO(false);
+    }
+  };
 
   const handleSave = async () => {
     setError(''); setSuccess(false); setSubmitting(true);
@@ -275,6 +300,30 @@ const AccountDetails = () => {
         {form.is_verified_b2b && (
           <div className="sm:col-span-2 flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-semibold">
             <CheckCircle2 className="w-4 h-4" /> Verified B2B Account
+          </div>
+        )}
+
+        {form.is_verified_b2b && hasAssignedAgent && (
+          <div className="sm:col-span-2 space-y-2">
+            <div className="flex items-start justify-between gap-4 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-white/10 rounded-xl p-4">
+              <div>
+                <p className="text-gray-900 dark:text-zinc-100 text-sm font-semibold">Allow Agent to Order on My Behalf</p>
+                <p className="text-gray-500 dark:text-zinc-400 text-xs mt-0.5">Your assigned sales agent will be able to place orders directly from your account.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleOOBO}
+                disabled={togglingOOBO}
+                className={`relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none disabled:opacity-60 ${agentCanOrder ? 'bg-accent' : 'bg-gray-300 dark:bg-zinc-600'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${agentCanOrder ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+            {ooboError && (
+              <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-xs font-semibold">
+                <AlertCircle className="w-3.5 h-3.5" />{ooboError}
+              </div>
+            )}
           </div>
         )}
       </div>

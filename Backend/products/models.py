@@ -202,4 +202,18 @@ class ProductVariation(models.Model):
             if 'product' in self.__dict__
             else f"SKU {self.sku}"
         )
+
         return f"{product_name} | {self.size} | {self.color or '—'}"
+
+
+class VariationImage(models.Model):
+    variation = models.ForeignKey(ProductVariation, on_delete=models.CASCADE, related_name='gallery_images')
+    image     = models.ImageField(upload_to='variations/gallery/')
+    alt_text  = models.CharField(max_length=255, blank=True)
+    order     = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f"Image for {self.variation} (#{self.pk})"

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Category, Product, ProductVariation, ProductImage
+from .models import Category, Product, ProductVariation, ProductImage, VariationImage
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -14,15 +14,19 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ['id', 'image', 'alt_text', 'order']
 
 
+class VariationImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = VariationImage
+        fields = ['id', 'image', 'alt_text', 'order']
+
+
 class ProductVariationSerializer(serializers.ModelSerializer):
     set_price         = serializers.DecimalField(source='b2b_price', max_digits=10, decimal_places=2, read_only=True)
     margin_percentage = serializers.SerializerMethodField()
     color_name        = serializers.SerializerMethodField()
     color_hex         = serializers.SerializerMethodField()
+    gallery_images    = VariationImageSerializer(many=True, read_only=True)
 
-    # 'size' and 'set_breakdown' are now model @property fields that return
-    # plain strings — the frontend receives exactly the same shape as before.
-    # No frontend changes needed.
     size          = serializers.SerializerMethodField()
     size_display  = serializers.SerializerMethodField()
     set_breakdown = serializers.SerializerMethodField()
@@ -39,7 +43,7 @@ class ProductVariationSerializer(serializers.ModelSerializer):
             'mrp_per_piece',
             'margin_percentage',
             'set_breakdown',
-            'stock_quantity', 'image',
+            'stock_quantity', 'image', 'gallery_images',
         ]
 
     def get_size(self, obj):

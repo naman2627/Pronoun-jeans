@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils.text import slugify
 
 from .models import (
-    Category, Product, ProductImage, ProductVariation,
+    Category, Product, ProductImage, ProductVariation, VariationImage,
     Color, HeroSlide, SizeSet, SizeSetBreakdown,
 )
 
@@ -260,6 +260,13 @@ class ProductAdmin(admin.ModelAdmin):
     )
 
 
+class VariationImageInline(admin.TabularInline):
+    model   = VariationImage
+    extra   = 0
+    fields  = ['image', 'alt_text', 'order']
+    ordering = ['order']
+
+
 @admin.register(ProductVariation)
 class ProductVariationAdmin(admin.ModelAdmin):
     form          = ProductVariationForm
@@ -267,3 +274,4 @@ class ProductVariationAdmin(admin.ModelAdmin):
     list_filter   = ['product__category', 'size_set']
     search_fields = ['sku', 'product__name', 'color']
     ordering      = ['product', 'size_set__name']
+    inlines       = [VariationImageInline]

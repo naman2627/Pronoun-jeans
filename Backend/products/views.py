@@ -42,7 +42,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
             .filter(is_active=True)
             .exclude(image__isnull=True)
             .exclude(image__exact='')
-            .prefetch_related('variations', 'gallery_images')
+            .prefetch_related('variations__gallery_images', 'gallery_images')
         )
         category_slug = self.request.query_params.get('category')
         if category_slug:

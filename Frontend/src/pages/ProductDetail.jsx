@@ -205,8 +205,11 @@ const ProductDetail = () => {
 
   const handleSwatchClick = (colorName) => {
     setActiveColor(colorName);
-    const match = product.variations.find(v => (v.color_name || v.color) === colorName && v.image);
-    setMainImage(match ? match.image : product.image);
+    const match = product.variations.find(v => (v.color_name || v.color) === colorName);
+    if (!match) { setMainImage(product.image); return; }
+    // prefer first gallery image, fall back to the single variation image, then product image
+    const firstImg = match.gallery_images?.[0]?.image || match.image || product.image;
+    setMainImage(firstImg);
   };
 
   const handleQtyChange = (variationId, value) => {
@@ -268,35 +271,36 @@ const ProductDetail = () => {
             <ZoomableImage src={mainImage} alt={product.name} />
 
             {(() => {
-              const colorVars = activeColor
-                ? product.variations.filter(v => (v.color_name || v.color) === activeColor && v.image)
-                : [];
-              if (colorVars.length === 0 && !product.gallery_images?.length) return null;
+              // When a color is active, collect all images for that color's variations
+              let thumbs = [];
+              if (activeColor) {
+                product.variations
+                  .filter(v => (v.color_name || v.color) === activeColor)
+                  .forEach(v => {
+                    if (v.gallery_images?.length) {
+                      v.gallery_images.forEach(gi => thumbs.push({ key: `gi-${gi.id}`, src: gi.image, alt: gi.alt_text || v.color_name || '' }));
+                    } else if (v.image) {
+                      thumbs.push({ key: `v-${v.id}`, src: v.image, alt: v.color_name || '' });
+                    }
+                  });
+              } else {
+                // Default: show product main image + product gallery images
+                if (product.image) thumbs.push({ key: 'main', src: product.image, alt: 'Main' });
+                (product.gallery_images || []).forEach(img =>
+                  thumbs.push({ key: `pg-${img.id}`, src: img.image, alt: img.alt_text || '' })
+                );
+              }
+
+              if (thumbs.length === 0) return null;
               return (
                 <div className="flex gap-3 mt-4 overflow-x-auto pb-2">
-                  {colorVars.length > 0 ? (
-                    colorVars.map(v => (
-                      <button key={v.id} onClick={() => setMainImage(v.image)}
-                        className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === v.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
-                        <img src={v.image} alt={v.size || v.color_name || ''} className="w-full h-full object-cover" />
-                      </button>
-                    ))
-                  ) : (
-                    <>
-                      {product.image && (
-                        <button onClick={() => setMainImage(product.image)}
-                          className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === product.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
-                          <img src={product.image} alt="Main" className="w-full h-full object-cover" />
-                        </button>
-                      )}
-                      {product.gallery_images.map(img => (
-                        <button key={img.id} onClick={() => setMainImage(img.image)}
-                          className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === img.image ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
-                          <img src={img.image} alt={img.alt_text || ''} className="w-full h-full object-cover" />
-                        </button>
-                      ))}
-                    </>
-                  )}
+                  {thumbs.map(t => (
+                    <button key={t.key} onClick={() => setMainImage(t.src)}
+                      className={`w-20 h-20 shrink-0 rounded-xl overflow-hidden border-2 transition-all ${mainImage === t.src ? 'border-accent' : 'border-transparent hover:border-gray-300 dark:hover:border-zinc-600'}`}>
+                      <img src={t.src} alt={t.alt} className="w-full h-full object-cover"
+                        onError={(e) => { e.target.style.display = 'none'; }} />
+                    </button>
+                  ))}
                 </div>
               );
             })()}

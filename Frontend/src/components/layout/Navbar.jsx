@@ -6,11 +6,16 @@ import { ShoppingBag, LogOut, Menu, X } from 'lucide-react';
 import ThemeToggle from '../ui/ThemeToggle';
 
 const Navbar = () => {
-  const { isAuthenticated, user, logout } = useAuthStore();
+  const { isAuthenticated, user, logout, impersonatedBuyer, clearImpersonatedBuyer } = useAuthStore();
   const { cartCount, cartTotal, fetchCart } = useCartStore();
   const navigate  = useNavigate();
   const location  = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleExitImpersonation = () => {
+    clearImpersonatedBuyer();
+    navigate('/agent');
+  };
 
   useEffect(() => {
     if (isAuthenticated) fetchCart();
@@ -26,7 +31,25 @@ const Navbar = () => {
   ];
 
   return (
-    <nav className="bg-white dark:bg-zinc-950 border-b border-gray-200 dark:border-white/5 sticky top-0 z-50 shadow-sm">
+    <div className="sticky top-0 z-50">
+      {impersonatedBuyer && (
+        <div className="bg-amber-400 text-amber-950 px-4 py-2 flex items-center justify-between gap-4 text-sm font-bold">
+          <span className="flex items-center gap-2 truncate">
+            ⚠️ ORDERING ON BEHALF OF:&nbsp;
+            <span className="uppercase tracking-wide">{impersonatedBuyer.full_name || 'Buyer'}</span>
+            {impersonatedBuyer.company_name && (
+              <span className="font-normal opacity-75">— {impersonatedBuyer.company_name}</span>
+            )}
+          </span>
+          <button
+            onClick={handleExitImpersonation}
+            className="shrink-0 bg-amber-950/15 hover:bg-amber-950/30 text-amber-950 text-xs font-black px-3 py-1 rounded-full transition-colors whitespace-nowrap"
+          >
+            ✕ Exit Mode
+          </button>
+        </div>
+      )}
+    <nav className="bg-white dark:bg-zinc-950 border-b border-gray-200 dark:border-white/5 shadow-sm">
       <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
 
         {/* Logo */}
@@ -141,6 +164,7 @@ const Navbar = () => {
         </div>
       )}
     </nav>
+    </div>
   );
 };
 
