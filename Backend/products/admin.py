@@ -126,11 +126,55 @@ class ProductVariationInline(admin.TabularInline):
         'stock_quantity',
         'image',
         'color',
+        'variation_images_widget',
     ]
-    readonly_fields = ['color']
+    readonly_fields = ['color', 'variation_images_widget']
+
+    def variation_images_widget(self, obj):
+        from django.utils.html import mark_safe
+        from django.urls import reverse
+
+        if not obj.pk:
+            return mark_safe(
+                '<span style="color:#999;font-size:12px;">Save variation first to add images.</span>'
+            )
+
+        upload_url = reverse('admin:variation_upload_images', args=[obj.pk])
+        images     = obj.gallery_images.all()
+
+        parts = [
+            f'<div class="var-img-widget" data-variation-id="{obj.pk}" '
+            f'data-upload-url="{upload_url}" '
+            f'style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:180px;">'
+            f'<div class="var-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;">'
+        ]
+        for img in images:
+            delete_url = reverse('admin:variation_delete_image', args=[obj.pk, img.pk])
+            parts.append(
+                f'<div class="var-thumb" data-image-id="{img.pk}" '
+                f'style="position:relative;display:inline-block;">'
+                f'<img src="{img.image.url}" '
+                f'style="height:48px;width:48px;object-fit:cover;border-radius:4px;">'
+                f'<button type="button" class="var-thumb-del" data-url="{delete_url}" '
+                f'style="position:absolute;top:-6px;right:-6px;background:#e74c3c;color:#fff;'
+                f'border:none;border-radius:50%;width:16px;height:16px;cursor:pointer;'
+                f'font-size:10px;line-height:1;padding:0;">&times;</button>'
+                f'</div>'
+            )
+        parts.append(
+            '</div>'
+            '<label style="cursor:pointer;font-size:12px;white-space:nowrap;color:#417690;">'
+            '+ Add images'
+            '<input type="file" multiple accept="image/*" class="var-img-picker" style="display:none;">'
+            '</label>'
+            '</div>'
+        )
+        return mark_safe(''.join(parts))
+
+    variation_images_widget.short_description = 'Images'
 
     class Media:
-        js = ('admin/js/set_breakdown_builder.js',)
+        js = ('admin/js/set_breakdown_builder.js', 'admin/js/variation_inline_images.js')
 
 
 # ── Clone action ──────────────────────────────────────────────────────────────
@@ -278,3 +322,46 @@ class ProductVariationAdmin(admin.ModelAdmin):
     search_fields = ['sku', 'product__name', 'color']
     ordering      = ['product', 'size_set__name']
     inlines       = [VariationImageInline]
+
+    def get_urls(self):
+        from django.urls import path
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                '<int:variation_id>/upload-images/',
+                self.admin_site.admin_view(self._upload_images),
+                name='variation_upload_images',
+            ),
+            path(
+                '<int:variation_id>/delete-image/<int:image_id>/',
+                self.admin_site.admin_view(self._delete_image),
+                name='variation_delete_image',
+            ),
+        ]
+        return custom_urls + urls
+
+    def _upload_images(self, request, variation_id):
+        from django.http import JsonResponse
+        if request.method != 'POST':
+            return JsonResponse({'error': 'POST only'}, status=405)
+        try:
+            variation = ProductVariation.objects.get(pk=variation_id)
+        except ProductVariation.DoesNotExist:
+            return JsonResponse({'error': 'Not found'}, status=404)
+        files   = request.FILES.getlist('images')
+        created = []
+        for f in files:
+            img = VariationImage.objects.create(variation=variation, image=f)
+            created.append({'id': img.pk, 'url': img.image.url})
+        return JsonResponse({'images': created})
+
+    def _delete_image(self, request, variation_id, image_id):
+        from django.http import JsonResponse
+        if request.method != 'POST':
+            return JsonResponse({'error': 'POST only'}, status=405)
+        try:
+            img = VariationImage.objects.get(pk=image_id, variation_id=variation_id)
+        except VariationImage.DoesNotExist:
+            return JsonResponse({'error': 'Not found'}, status=404)
+        img.delete()
+        return JsonResponse({'ok': True})
