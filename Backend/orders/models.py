@@ -55,7 +55,8 @@ class CartItem(models.Model):
         unique_together = ('cart', 'variation')
 
     def __str__(self):
-        return f"{self.variation.sku} x{self.quantity}"
+        sku = self.variation.sku if self.variation_id else '[removed]'
+        return f"{sku} x{self.quantity}"
 
 
 class Order(models.Model):

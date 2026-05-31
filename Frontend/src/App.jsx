@@ -19,6 +19,7 @@ import Cart from './pages/Cart';
 import OrderHistory from './pages/OrderHistory';
 import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
+import ResetPassword from './pages/ResetPassword';
 
 import AgentDashboard    from './pages/agent/AgentDashboard';
 import AgentBuyers       from './pages/agent/AgentBuyers';
@@ -68,7 +69,8 @@ function App() {
                 <Route path="/terms"                  element={<Legal page="terms" />} />
                 <Route path="/privacy"                element={<Legal page="privacy" />} />
                 <Route path="/refund"                 element={<Legal page="refund" />} />
-                <Route path="/login"                  element={<Login />} />
+                <Route path="/login"                                    element={<Login />} />
+                <Route path="/reset-password/:uid/:token"            element={<ResetPassword />} />
                 <Route path="/catalog"                element={<Catalog />} />
                 <Route path="/catalog/:category_slug" element={<CategoryProducts />} />
                 <Route path="/product/:slug"          element={<ProductDetail />} />

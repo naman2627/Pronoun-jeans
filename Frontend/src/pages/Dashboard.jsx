@@ -64,8 +64,9 @@ const Dashboard = () => {
 };
 
 const PastOrders = () => {
-  const [orders, setOrders]   = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders]           = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => {
     api.get('orders/history/')
@@ -73,6 +74,25 @@ const PastOrders = () => {
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleDownload = async (orderId) => {
+    setDownloadingId(orderId);
+    try {
+      const res = await api.get(`orders/${orderId}/invoice/`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a   = document.createElement('a');
+      a.href     = url;
+      a.download = `pronoun-invoice-${String(orderId).padStart(5, '0')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent — network errors are handled globally
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   if (loading) return <Spinner />;
   if (orders.length === 0) return <Empty icon={ShoppingBag} message="You haven't placed any orders yet." />;
@@ -105,14 +125,18 @@ const PastOrders = () => {
                     {new Date(order.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </td>
                   <td className="px-6 py-4 text-gray-600 dark:text-zinc-300">{totalQty} units</td>
-                  <td className="px-6 py-4 text-gray-900 dark:text-zinc-100 font-bold">₹{order.total_amount}</td>
+                  <td className="px-6 py-4 text-gray-900 dark:text-zinc-100 font-bold">₹{order.grand_total}</td>
                   <td className="px-6 py-4">
                     <span className={`text-xs font-bold px-3 py-1 rounded-full border capitalize ${statusClass}`}>{order.status}</span>
                   </td>
                   <td className="px-6 py-4">
-                    <button onClick={() => alert(`Invoice for order #${order.id} — coming soon.`)}
-                      className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 hover:text-accent border border-gray-200 dark:border-white/10 hover:border-accent/40 px-3 py-1.5 rounded-lg transition-colors font-semibold">
-                      <FileText className="w-3.5 h-3.5" /> Download
+                    <button
+                      onClick={() => handleDownload(order.id)}
+                      disabled={downloadingId === order.id}
+                      className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-400 hover:text-accent border border-gray-200 dark:border-white/10 hover:border-accent/40 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg transition-colors font-semibold">
+                      {downloadingId === order.id
+                        ? <><Loader className="animate-spin w-3.5 h-3.5" /> Generating…</>
+                        : <><FileText className="w-3.5 h-3.5" /> Download</>}
                     </button>
                   </td>
                 </tr>

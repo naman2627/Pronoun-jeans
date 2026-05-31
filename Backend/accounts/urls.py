@@ -4,6 +4,7 @@ from .views import (
     AddressListCreateView, AddressDetailView,
     AgentBuyersListView, AgentBuyerDetailView,
     AgentManualOnboardView, AgentCanOrderToggleView,
+    PasswordResetRequestView, PasswordResetConfirmView,
 )
 
 urlpatterns = [
@@ -16,4 +17,6 @@ urlpatterns = [
     path('agent/buyers/<int:pk>/', AgentBuyerDetailView.as_view(),   name='agent-buyer-detail'),
     path('agent/onboard-manual/',  AgentManualOnboardView.as_view(), name='agent-onboard-manual'),
     path('agent-can-order/',       AgentCanOrderToggleView.as_view(), name='agent-can-order'),
+    path('password-reset/',         PasswordResetRequestView.as_view(), name='password-reset-request'),
+    path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
 ]

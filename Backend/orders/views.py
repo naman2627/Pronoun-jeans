@@ -8,7 +8,9 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Sum
+from django.http import FileResponse
 from django.utils import timezone
+from .invoice import generate_invoice_pdf
 
 from .models import Cart, CartItem, Order, OrderItem, Commission, SampleOrder, Coupon
 from .tracking_service import get_bigship_tracking
@@ -121,7 +123,7 @@ class CartDetailView(APIView):
 
     def get(self, request):
         cart, _ = Cart.objects.get_or_create(user=request.user)
-        return Response(CartSerializer(cart).data)
+        return Response(CartSerializer(cart, context={'request': request}).data)
 
 
 class CartItemUpdateView(APIView):
@@ -168,7 +170,7 @@ class CartItemUpdateView(APIView):
                 except ProductVariation.DoesNotExist:
                     continue
 
-        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
+        return Response(CartSerializer(cart, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class CartItemDetailView(APIView):
@@ -209,7 +211,7 @@ class CartItemDetailView(APIView):
             item.save()
 
         cart = Cart.objects.prefetch_related('items__variation').get(user=request.user)
-        return Response(CartSerializer(cart).data)
+        return Response(CartSerializer(cart, context={'request': request}).data)
 
 
 # ── Coupons ───────────────────────────────────────────────────────────────────
@@ -779,3 +781,28 @@ class OrderTrackingTimelineView(APIView):
 
         timeline = get_bigship_tracking(order.tracking_number)
         return Response({'timeline': timeline})
+
+
+class InvoiceDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            if request.user.is_agent:
+                order = Order.objects.select_related(
+                    'user', 'shipping_address', 'billing_address', 'coupon',
+                ).get(pk=pk, user__assigned_agent=request.user)
+            else:
+                order = Order.objects.select_related(
+                    'user', 'shipping_address', 'billing_address', 'coupon',
+                ).get(pk=pk, user=request.user)
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        pdf = generate_invoice_pdf(order)
+        return FileResponse(
+            pdf,
+            as_attachment=True,
+            filename=f'pronoun-invoice-{order.id:05d}.pdf',
+            content_type='application/pdf',
+        )

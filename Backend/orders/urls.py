@@ -8,7 +8,7 @@ from .views import (
     AgentCommissionsListView, AgentLedgerSummaryView,
     AgentSampleOrdersListView, AgentOrdersListView,
     AgentOrderTrackingUpdateView, OrderTrackingTimelineView,
-    AgentEligibleBuyersView,
+    AgentEligibleBuyersView, InvoiceDownloadView,
 )
 
 urlpatterns = [
@@ -22,6 +22,7 @@ urlpatterns = [
     path('razorpay/verify/',     RazorpayVerifyPaymentView.as_view(), name='razorpay-verify'),
     path('checkout/',            CheckoutView.as_view(),        name='checkout'),
     path('history/',             OrderHistoryView.as_view(),    name='order-history'),
+    path('orders/<int:pk>/invoice/',        InvoiceDownloadView.as_view(),        name='order-invoice'),
     path('orders/<int:pk>/track-timeline/', OrderTrackingTimelineView.as_view(), name='order-track-timeline-buyer'),
     path('agent/commissions/',                    AgentCommissionsListView.as_view(),     name='agent-commissions'),
     path('agent/ledger/',                         AgentLedgerSummaryView.as_view(),       name='agent-ledger'),

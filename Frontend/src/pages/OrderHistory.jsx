@@ -43,8 +43,9 @@ const OrderCard = ({ order, onTrack }) => {
   const hasTracking  = !!order.tracking_number;
   const showTrackBtn = canTrack && hasTracking;
 
-  const grandTotal  = order.grand_total ?? order.total_amount;
-  const hasDiscount = order.discount_amount && parseFloat(order.discount_amount) > 0;
+  const grandTotal    = order.grand_total ?? order.total_amount;
+  const totalSaved    = parseFloat(order.discount_amount || 0) + parseFloat(order.upi_discount || 0);
+  const hasDiscount   = totalSaved > 0;
 
   return (
     <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden">
@@ -63,8 +64,10 @@ const OrderCard = ({ order, onTrack }) => {
             <p className="text-gray-900 dark:text-zinc-100 text-lg font-black">₹{parseFloat(grandTotal).toFixed(2)}</p>
             {hasDiscount && (
               <p className="text-green-600 dark:text-green-400 text-xs font-semibold">
-                Saved ₹{parseFloat(order.discount_amount).toFixed(2)}
+                Saved ₹{totalSaved.toFixed(2)}
                 {order.coupon_code && ` (${order.coupon_code})`}
+                {parseFloat(order.upi_discount || 0) > 0 && !order.coupon_code && ' (Prepaid)'}
+                {parseFloat(order.upi_discount || 0) > 0 && order.coupon_code && ' + Prepaid'}
               </p>
             )}
           </div>

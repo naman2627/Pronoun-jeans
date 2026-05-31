@@ -5,6 +5,9 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
 
 from .models import CustomUser, Address
 from .serializers import (
@@ -162,6 +165,52 @@ class AgentBuyerDetailView(generics.RetrieveAPIView):
         return CustomUser.objects.filter(assigned_agent=self.request.user)
 
 
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip().lower()
+        if not email:
+            return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user  = CustomUser.objects.get(email=email)
+            token = PasswordResetTokenGenerator().make_token(user)
+            uid   = urlsafe_base64_encode(force_bytes(user.pk))
+            # TODO: send email with reset link when email is configured
+            # reset_link = f"{settings.FRONTEND_URL}/reset-password/{uid}/{token}/"
+            _ = uid, token  # suppress unused warning until email is wired up
+        except CustomUser.DoesNotExist:
+            pass  # always return success — don't reveal whether email exists
+        return Response({'message': 'If an account exists with that email, a reset link will be sent.'})
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uid      = request.data.get('uid', '').strip()
+        token    = request.data.get('token', '').strip()
+        password = request.data.get('password', '').strip()
+
+        if not all([uid, token, password]):
+            return Response({'error': 'uid, token, and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(password) < 8:
+            return Response({'error': 'Password must be at least 8 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user_pk = force_str(urlsafe_base64_decode(uid))
+            user    = CustomUser.objects.get(pk=user_pk)
+        except (TypeError, ValueError, CustomUser.DoesNotExist):
+            return Response({'error': 'Invalid reset link.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not PasswordResetTokenGenerator().check_token(user, token):
+            return Response({'error': 'This reset link has expired or is invalid.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(password)
+        user.save(update_fields=['password'])
+        return Response({'message': 'Password reset successfully. You can now log in.'})
+
+
 class AgentManualOnboardView(APIView):
     permission_classes = [IsAgent]
 
@@ -185,8 +234,6 @@ class AgentManualOnboardView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        temp_password = CustomUser.objects.make_random_password(length=12)
-
         user = CustomUser(
             email           = email,
             username        = email,
@@ -198,16 +245,15 @@ class AgentManualOnboardView(APIView):
             is_verified_b2b = True,
             assigned_agent  = request.user,
         )
-        user.set_password(temp_password)
+        user.set_unusable_password()
         user.save()
 
         return Response(
             {
-                'message':       f'Buyer {email} onboarded successfully.',
-                'buyer_id':      user.id,
-                'email':         user.email,
-                'company_name':  user.company_name,
-                'temp_password': temp_password,
+                'message':      f'Buyer {email} onboarded successfully. Ask them to use "Forgot Password" on the login page to set their password.',
+                'buyer_id':     user.id,
+                'email':        user.email,
+                'company_name': user.company_name,
             },
             status=status.HTTP_201_CREATED,
         )

@@ -5,10 +5,11 @@ from accounts.serializers import AddressSerializer
 
 
 class ProductVariationBriefSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source='product.name', read_only=True)
-    moq          = serializers.IntegerField(source='product.moq', read_only=True)
-    color_name   = serializers.SerializerMethodField()
-    color_hex    = serializers.SerializerMethodField()
+    product_name  = serializers.CharField(source='product.name', read_only=True)
+    moq           = serializers.IntegerField(source='product.moq', read_only=True)
+    color_name    = serializers.SerializerMethodField()
+    color_hex     = serializers.SerializerMethodField()
+    display_image = serializers.SerializerMethodField()
 
     class Meta:
         model  = ProductVariation
@@ -16,6 +17,7 @@ class ProductVariationBriefSerializer(serializers.ModelSerializer):
             'id', 'sku', 'size',
             'color', 'color_name', 'color_hex',
             'b2b_price', 'stock_quantity', 'product_name', 'moq',
+            'display_image',
         ]
 
     def get_color_name(self, obj):
@@ -27,6 +29,15 @@ class ProductVariationBriefSerializer(serializers.ModelSerializer):
         if obj.color_palette:
             return obj.color_palette.hex_code
         return '#CCCCCC'
+
+    def get_display_image(self, obj):
+        request = self.context.get('request')
+        # Prefer variation's own image, fall back to product's main image
+        img = obj.image or (obj.product.image if obj.product_id else None)
+        if not img:
+            return None
+        url = img.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -88,7 +99,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model  = Order
         fields = [
             'id', 'user', 'status', 'payment_method', 'payment_status',
-            'total_amount', 'coupon_code', 'discount_amount', 'grand_total',
+            'total_amount', 'coupon_code', 'discount_amount', 'upi_discount', 'grand_total',
             'shipping_address', 'billing_address',
             'courier_name', 'tracking_number', 'tracking_url',
             'items', 'created_at',

@@ -47,41 +47,6 @@ const fmt         = (n) => parseFloat(n || 0).toFixed(2);
 const buildUpiUri = (amount, note = 'B2B Order') =>
   `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(BUSINESS_NAME)}&am=${fmt(amount)}&cu=INR&tn=${encodeURIComponent(note)}`;
 
-// ── Resolve product images by SKU via catalog search ─────────────────────────
-// Returns a map of { [sku]: imageUrl }
-const resolveProductImages = async (items) => {
-  const imageMap = {};
-  await Promise.allSettled(
-    items.map(async (item) => {
-      const sku = item.variation?.sku;
-      if (!sku) return;
-      try {
-        const res = await api.get(`products/catalog/?search=${encodeURIComponent(sku)}`);
-        const results = res.data?.results ?? res.data ?? [];
-        // Find the product whose variations include this SKU
-        for (const product of results) {
-          const match = product.variations?.find(v => v.sku === sku);
-          if (match) {
-            // Prefer variation-level image, fall back to product-level image
-            imageMap[sku] = match.image || product.image || null;
-            return;
-          }
-          // Looser match: product name matches
-          if (product.image && results.length === 1) {
-            imageMap[sku] = product.image;
-            return;
-          }
-        }
-        // Last resort: just use first result's product image
-        if (results[0]?.image) imageMap[sku] = results[0].image;
-      } catch {
-        // silently fail — image just won't show
-      }
-    })
-  );
-  return imageMap;
-};
-
 // ── Set Breakdown Tooltip ─────────────────────────────────────────────────────
 
 const SetBreakdownTooltip = ({ breakdown }) => {
@@ -250,10 +215,10 @@ const ProductThumb = ({ src, alt, className = '' }) => {
 
 // ── Cart Row ──────────────────────────────────────────────────────────────────
 
-const CartRow = ({ item, index, onQtyChange, saving, imageMap }) => {
+const CartRow = ({ item, index, onQtyChange, saving }) => {
   const { id, variation, quantity, unavailable } = item;
   const price = parseFloat(variation?.b2b_price ?? 0);
-  const thumb = imageMap[variation?.sku] ?? null;
+  const thumb = variation?.display_image ?? null;
 
   if (unavailable) {
     return (
@@ -386,7 +351,7 @@ const AddressForm = ({ initial = EMPTY_ADDR, editId = null, onSaved, onCancel })
   );
 };
 
-const AddressCard = ({ addr, selected, onSelect, type, onEdit }) => {
+const AddressCard = ({ addr, selected, onSelect, type, onEdit, onDelete }) => {
   const Icon = type === 'shipping' ? Truck : Building;
   return (
     <div className={`rounded-xl border p-4 transition-all ${selected ? 'border-accent/60 bg-accent/5' : 'border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-zinc-900 hover:border-gray-300 dark:hover:border-white/20'}`}>
@@ -404,9 +369,14 @@ const AddressCard = ({ addr, selected, onSelect, type, onEdit }) => {
         {addr.address_line_2 && <p className="text-gray-500 text-xs">{addr.address_line_2}</p>}
         <p className="text-gray-500 text-xs">{addr.city}, {addr.state} — {addr.pincode}</p>
       </div>
-      <button onClick={() => onEdit(addr)} className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-accent transition-colors font-semibold">
-        <Pencil className="w-3 h-3" /> Edit
-      </button>
+      <div className="mt-2 flex items-center gap-3">
+        <button onClick={() => onEdit(addr)} className="flex items-center gap-1 text-xs text-gray-400 hover:text-accent transition-colors font-semibold">
+          <Pencil className="w-3 h-3" /> Edit
+        </button>
+        <button onClick={() => onDelete(addr.id)} className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors font-semibold">
+          <Trash2 className="w-3 h-3" /> Delete
+        </button>
+      </div>
     </div>
   );
 };
@@ -421,6 +391,12 @@ const AddressSection = ({ type, addresses, selectedId, onSelect, onAddressesUpda
   const openEdit = (addr) => { setEditAddr(addr); setShowForm(true); };
   const handleSaved = async () => {
     setShowForm(false); setEditAddr(null);
+    const res = await api.get('accounts/addresses/');
+    onAddressesUpdated(res.data ?? []);
+  };
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this address?')) return;
+    await api.delete(`accounts/addresses/${id}/`);
     const res = await api.get('accounts/addresses/');
     onAddressesUpdated(res.data ?? []);
   };
@@ -450,7 +426,7 @@ const AddressSection = ({ type, addresses, selectedId, onSelect, onAddressesUpda
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {addresses.map(a => (
               <AddressCard key={a.id} addr={a} type={type} selected={selectedId === a.id}
-                onSelect={onSelect} onEdit={openEdit} />
+                onSelect={onSelect} onEdit={openEdit} onDelete={handleDelete} />
             ))}
           </div>
         )
@@ -823,8 +799,6 @@ const Cart = () => {
   const impersonatedBuyer  = useAuthStore((s) => s.impersonatedBuyer);
 
   const [items, setItems]                       = useState([]);
-  const [imageMap, setImageMap]                 = useState({});   // { [sku]: imageUrl }
-  const [imagesLoading, setImagesLoading]       = useState(false);
   const [addresses, setAddresses]               = useState([]);
   const [availableCoupons, setAvailableCoupons] = useState([]);
   const [shippingId, setShippingId]             = useState(null);
@@ -863,13 +837,6 @@ const Cart = () => {
       if (defShip) setShippingId(defShip.id);
       if (defBill) setBillingId(defBill.id);
 
-      // Resolve product images in the background — doesn't block cart display
-      if (cartItems.length > 0) {
-        setImagesLoading(true);
-        resolveProductImages(cartItems)
-          .then(map => setImageMap(map))
-          .finally(() => setImagesLoading(false));
-      }
     }).catch(() => showToast('Failed to load cart.', 'error'))
       .finally(() => setLoading(false));
   }, [showToast, impersonatedBuyer]);
@@ -977,11 +944,6 @@ const Cart = () => {
             <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-sm">
               <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5 flex items-center justify-between">
                 <h2 className="text-gray-900 dark:text-zinc-100 font-bold text-lg">Cart Items</h2>
-                {imagesLoading && (
-                  <span className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-zinc-500">
-                    <Loader className="animate-spin w-3 h-3" /> Loading images…
-                  </span>
-                )}
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1004,7 +966,6 @@ const Cart = () => {
                         index={idx}
                         onQtyChange={handleQtyChange}
                         saving={saving}
-                        imageMap={imageMap}
                       />
                     ))}
                   </tbody>
@@ -1015,7 +976,7 @@ const Cart = () => {
             {/* Mobile cards */}
             <div className="md:hidden space-y-3">
               {items.map(item => {
-                const thumb = imageMap[item.variation?.sku] ?? null;
+                const thumb = item.variation?.display_image ?? null;
                 if (item.unavailable) {
                   return (
                     <div key={item.id} className="bg-red-50/60 dark:bg-red-500/5 rounded-2xl border border-red-200 dark:border-red-500/20 p-4 shadow-sm flex items-center justify-between gap-3">

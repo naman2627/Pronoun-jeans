@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   X, Mail, User, Building, Phone, FileText,
-  Loader2, CheckCircle2, AlertCircle, Copy, Check,
+  Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import api from '../../api/axios';
 
@@ -16,10 +16,9 @@ const EMPTY_FORM = {
 
 const OnboardBuyerModal = ({ onClose, onSuccess }) => {
   const [form, setForm]           = useState(EMPTY_FORM);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
-  const [result, setResult]       = useState(null); // holds response after success
-  const [copied, setCopied]       = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState('');
+  const [result, setResult]   = useState(null);
 
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
@@ -35,14 +34,6 @@ const OnboardBuyerModal = ({ onClose, onSuccess }) => {
       setError(err.response?.data?.error || 'Failed to onboard buyer. Please try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const copyPassword = () => {
-    if (result?.temp_password) {
-      navigator.clipboard.writeText(result.temp_password);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -75,23 +66,10 @@ const OnboardBuyerModal = ({ onClose, onSuccess }) => {
                 <p className="text-gray-500 dark:text-zinc-400 text-sm">{result.email} has been added to your buyer list.</p>
               </div>
 
-              {/* Temp password display */}
-              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-xl p-4">
-                <p className="text-amber-700 dark:text-amber-400 text-xs font-bold uppercase tracking-widest mb-2">
-                  Temporary Password — Share with Buyer
-                </p>
-                <div className="flex items-center justify-between gap-3">
-                  <code className="text-gray-900 dark:text-zinc-100 font-mono text-sm font-bold tracking-wider">
-                    {result.temp_password}
-                  </code>
-                  <button onClick={copyPassword}
-                    className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors shrink-0">
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <p className="text-amber-600 dark:text-amber-500 text-xs mt-2">
-                  This password is shown only once. The buyer should change it after first login.
+              <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/25 rounded-xl p-4">
+                <p className="text-blue-700 dark:text-blue-400 text-xs font-bold uppercase tracking-widest mb-1">Next Step</p>
+                <p className="text-blue-700 dark:text-blue-300 text-sm">
+                  Ask <span className="font-bold">{result.email}</span> to visit the portal, click <span className="font-bold">"Forgot Password"</span> on the login page, and set their own password.
                 </p>
               </div>
 
