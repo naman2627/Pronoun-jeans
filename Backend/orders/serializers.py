@@ -10,15 +10,23 @@ class ProductVariationBriefSerializer(serializers.ModelSerializer):
     color_name    = serializers.SerializerMethodField()
     color_hex     = serializers.SerializerMethodField()
     display_image = serializers.SerializerMethodField()
+    size          = serializers.SerializerMethodField()
+    set_breakdown = serializers.SerializerMethodField()
 
     class Meta:
         model  = ProductVariation
         fields = [
-            'id', 'sku', 'size',
+            'id', 'sku', 'size', 'set_breakdown',
             'color', 'color_name', 'color_hex',
             'b2b_price', 'stock_quantity', 'product_name', 'moq',
             'display_image',
         ]
+
+    def get_size(self, obj):
+        return obj.size_set.name if obj.size_set_id and obj.size_set else ''
+
+    def get_set_breakdown(self, obj):
+        return obj.size_breakdown.breakdown_string if obj.size_breakdown_id and obj.size_breakdown else ''
 
     def get_color_name(self, obj):
         if obj.color_palette:

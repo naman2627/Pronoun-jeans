@@ -118,11 +118,25 @@ def _resolve_buyer(request, buyer_id=None):
 
 # ── Cart ──────────────────────────────────────────────────────────────────────
 
+_CART_PREFETCH = [
+    'items__variation__product',
+    'items__variation__size_set',
+    'items__variation__size_breakdown',
+    'items__variation__color_palette',
+]
+
+
+def _fetch_cart(user, pk=None):
+    qs = Cart.objects.prefetch_related(*_CART_PREFETCH)
+    return qs.get(pk=pk) if pk else qs.get(user=user)
+
+
 class CartDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         cart, _ = Cart.objects.get_or_create(user=request.user)
+        cart = _fetch_cart(request.user, pk=cart.pk)
         return Response(CartSerializer(cart, context={'request': request}).data)
 
 
@@ -170,6 +184,7 @@ class CartItemUpdateView(APIView):
                 except ProductVariation.DoesNotExist:
                     continue
 
+        cart = _fetch_cart(request.user, pk=cart.pk)
         return Response(CartSerializer(cart, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
@@ -210,7 +225,7 @@ class CartItemDetailView(APIView):
             item.quantity = quantity
             item.save()
 
-        cart = Cart.objects.prefetch_related('items__variation').get(user=request.user)
+        cart = _fetch_cart(request.user)
         return Response(CartSerializer(cart, context={'request': request}).data)
 
 
@@ -249,7 +264,7 @@ class ApplyCouponView(APIView):
             return Response({'error': 'This coupon has expired.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            cart = Cart.objects.prefetch_related('items__variation').get(user=request.user)
+            cart = _fetch_cart(request.user)
         except Cart.DoesNotExist:
             return Response({'error': 'Your cart is empty.'}, status=status.HTTP_400_BAD_REQUEST)
 
