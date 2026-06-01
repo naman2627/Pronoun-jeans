@@ -1,20 +1,39 @@
 @import "tailwindcss";
+@variant dark (&:where(.dark, .dark *));
 
-/* 1. Define the custom colors for the B2B Dark Theme */
 @theme {
-  --color-primary: #09090b;   /* Deep rich black for the main background */
-  --color-secondary: #18181b; /* Slightly lighter charcoal for cards and tables */
-  --color-accent: #a855f7;    /* Premium purple for badges, buttons, and highlights */
+  --color-accent:    #dc2626;
+  --color-primary:   #ffffff;
+  --color-secondary: #f9fafb;
+  --color-textMain:  #111827;
+  --color-textMuted: #6b7280;
 }
 
-/* 2. Force the entire app to use the dark background by default */
+:root {
+  --color-primary:    #ffffff;
+  --color-secondary:  #f9fafb;
+  --color-accent:     #dc2626;
+  --color-text-main:  #111827;
+  --color-text-muted: #6b7280;
+  --color-border:     #e5e7eb;
+}
+
+:root.dark {
+  --color-primary:    #09090b;
+  --color-secondary:  #18181b;
+  --color-accent:     #dc2626;
+  --color-text-main:  #f4f4f5;
+  --color-text-muted: #71717a;
+  --color-border:     rgba(255,255,255,0.07);
+}
+
 @layer base {
   html, body {
     background-color: var(--color-primary);
-    color: #ffffff;
+    color: var(--color-text-main);
     font-family: ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 }

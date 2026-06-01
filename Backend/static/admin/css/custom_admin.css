@@ -1,0 +1,82 @@
+/* ============================================================================
+   Pronoun Jeans — Admin UI overrides
+   Loaded via JAZZMIN_SETTINGS['custom_css']
+   ============================================================================ */
+
+/* --------------------------------------------------------------------------
+   FIX: Mobile layout — sidebar CSS Grid column collapses to 760px
+
+   On screens < 992px (Bootstrap lg breakpoint), the sidebar is
+   position:fixed with margin-left:-250px (off-screen). But the CSS Grid
+   auto column still reserves ~760px for it, squishing main content into
+   ~48px. Force the sidebar grid slot to 0 so main content gets full width.
+   The sidebar overlays content on mobile anyway (position:fixed).
+   -------------------------------------------------------------------------- */
+@media (max-width: 991.98px) {
+    .app-wrapper {
+        grid-template-columns: 0 1fr !important;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   FIX: Excessive padding on nested fieldset cards (horizontal_tabs / collapsible)
+
+   Jazzmin's fieldset.html wraps every fieldset inside a card with .p-5
+   (padding: 3rem on all sides).  Combined with the outer card-body (1.25rem),
+   this creates ~80px of left whitespace before form fields — very visible on
+   empty add-pages.  Override to 1rem for a clean, tight layout.
+   -------------------------------------------------------------------------- */
+
+/* horizontal_tabs format: outer-card > card-body > [tabs] > tab-pane > inner-card > p-5 */
+#content-main .card .tab-pane .card [class*="p-5"],
+#content-main .card .tab-pane .card .card-body {
+    padding: 1rem !important;
+}
+
+/* collapsible format: jazzy-collapsible > card > card-body > inner-card > p-5 */
+#jazzy-collapsible .card .card-body .card [class*="p-5"],
+#jazzy-collapsible .card .card-body .card .card-body {
+    padding: 1rem !important;
+}
+
+/* Remove double border / shadow on the inner (nested) cards */
+#content-main .card .tab-pane .card,
+#jazzy-collapsible .card .card-body .card {
+    border: none;
+    box-shadow: none;
+    margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   FIX: SizeSet From/To range selectors layout
+
+   Bootstrap applies width:100% to all <select> elements inside form columns,
+   causing the From and To pickers to stack full-width instead of sitting
+   inline. Force auto width and restore the native dropdown arrow that
+   Select2 hides via its own CSS (even after select2('destroy')).
+   -------------------------------------------------------------------------- */
+#sb-from-select,
+#sb-to-select {
+    width: auto !important;
+    min-width: 120px !important;
+    max-width: 180px !important;
+    flex-shrink: 0 !important;
+    display: inline-block !important;
+    -webkit-appearance: menulist !important;
+    appearance: menulist !important;
+}
+
+/* --------------------------------------------------------------------------
+   FIX: UI Builder panel (.control-sidebar) stretches the CSS Grid auto column
+
+   When show_ui_builder=True, Jazzmin renders an <aside class="control-sidebar
+   ui-customiser"> as a direct child of .app-wrapper with position:static.
+   Being in-flow, the CSS Grid auto-places it in column 1 (sidebar slot) and
+   sizes that column to the panel's ~760px width — pushing main content right
+   by ~510px and creating a large gap. Taking it out of flow with
+   position:fixed prevents it from influencing grid column sizing.
+   show_ui_builder is now False; this rule is a safety net if re-enabled.
+   -------------------------------------------------------------------------- */
+.app-wrapper > .control-sidebar {
+    position: fixed !important;
+}
