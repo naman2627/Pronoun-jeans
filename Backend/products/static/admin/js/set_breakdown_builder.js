@@ -72,6 +72,11 @@
     inputEl.style.display = 'none';
     const existing_qtys = parseBreakdown(inputEl.value);
 
+    // Resolve label input once at render time — walk up to <tr> or .form-row,
+    // explicitly skipping inner <div> wrappers used by Jazzmin.
+    const row      = inputEl.closest('tr, .form-row');
+    const labelInp = row ? row.querySelector('input[id*="label"], input[name*="label"]') : null;
+
     const builder = document.createElement('div');
     builder.className = 'sb-builder';
     builder.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;align-items:center;padding:4px 0;';
@@ -99,13 +104,16 @@
         sel.appendChild(opt);
       }
 
-      sel.addEventListener('change', function () {
+      function onQtyChange() {
         const str = buildBreakdownString(builder);
         inputEl.value = str;
-        const row      = inputEl.closest('tr, .form-row, div');
-        const labelInp = row ? row.querySelector('input[name*="label"]') : null;
         if (labelInp) labelInp.value = str;
-      });
+      }
+      if (window.jQuery) {
+        jQuery(sel).on('change', onQtyChange);
+      } else {
+        sel.addEventListener('change', onQtyChange);
+      }
 
       pill.appendChild(lbl);
       pill.appendChild(sel);
@@ -116,8 +124,6 @@
 
     const str = buildBreakdownString(builder);
     inputEl.value = str;
-    const row      = inputEl.closest('tr, .form-row, div');
-    const labelInp = row ? row.querySelector('input[name*="label"]') : null;
     if (labelInp) labelInp.value = str;
   }
 
