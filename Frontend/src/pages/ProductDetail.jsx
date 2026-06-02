@@ -34,6 +34,14 @@ const ColorSwatch = ({ hex, name }) => (
   </span>
 );
 
+const StockBadge = ({ qty }) => {
+  if (qty === 0 || qty == null)
+    return <span className="text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 px-1.5 py-0.5 rounded-full">Out of Stock</span>;
+  if (qty <= 10)
+    return <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 px-1.5 py-0.5 rounded-full">{qty} left</span>;
+  return <span className="text-[10px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 px-1.5 py-0.5 rounded-full">In Stock</span>;
+};
+
 // ── Set Breakdown Tooltip ─────────────────────────────────────────────────────
 
 const SetBreakdownTooltip = ({ breakdown }) => {
@@ -378,8 +386,14 @@ const ProductDetail = () => {
               )}
 
               {isAuthenticated ? (
-                <div className="inline-flex items-center gap-1.5 bg-accent/10 border border-accent/30 text-accent text-xs font-semibold px-3 py-1.5 rounded-full">
-                  <BadgeCheck className="w-3.5 h-3.5" /> MOQ: {product.moq} units
+                <div className="flex flex-wrap gap-2">
+                  <div className="inline-flex items-center gap-1.5 bg-accent/10 border border-accent/30 text-accent text-xs font-semibold px-3 py-1.5 rounded-full">
+                    <BadgeCheck className="w-3.5 h-3.5" /> MOQ: {product.moq} units
+                  </div>
+                  {(() => {
+                    const total = product.variations.reduce((s, v) => s + (v.stock_quantity ?? 0), 0);
+                    return <StockBadge qty={total} />;
+                  })()}
                 </div>
               ) : (
                 <div className="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-500 dark:text-zinc-400 text-xs font-semibold px-3 py-1.5 rounded-full">
@@ -444,6 +458,7 @@ const ProductDetail = () => {
                               <span className="text-gray-400 dark:text-zinc-600">/</span>
                               <ColorSwatch hex={v.color_hex || '#CCCCCC'} name={v.color_name || v.color} />
                             </div>
+                            <div className="mt-1"><StockBadge qty={v.stock_quantity} /></div>
                           </td>
                           {/* break-all: forces long SKU slugs to wrap within the capped column width */}
                           <td className="px-4 py-3 text-gray-400 dark:text-zinc-500 font-mono text-xs break-all max-w-[120px]">{v.sku}</td>
@@ -455,7 +470,8 @@ const ProductDetail = () => {
                               value={quantities[v.id] || ''}
                               onChange={e => handleQtyChange(v.id, e.target.value)}
                               placeholder="0"
-                              className="w-14 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-accent transition-colors" />
+                              disabled={!v.stock_quantity}
+                              className="w-14 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-zinc-100 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed" />
                           </td>
                           <TotalCell v={v} qty={quantities[v.id] || 0} />
                         </tr>

@@ -98,7 +98,8 @@ class CommissionAdmin(admin.ModelAdmin):
 
 @admin.register(SampleOrder)
 class SampleOrderAdmin(admin.ModelAdmin):
-    list_display  = ['design_number', 'buyer', 'agent', 'rate', 'date', 'created_at']
-    list_filter   = ['agent', 'date']
+    list_display  = ['design_number', 'buyer', 'agent', 'rate', 'date', 'status', 'created_at']
+    list_filter   = ['status', 'agent', 'date']
+    list_editable = ['status']
     search_fields = ['design_number', 'buyer__email', 'agent__email']
     ordering      = ['-date']

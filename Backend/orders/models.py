@@ -202,9 +202,17 @@ class Commission(models.Model):
 
 
 class SampleOrder(models.Model):
+    class Status(models.TextChoices):
+        PENDING    = 'PENDING',    'Pending'
+        CONFIRMED  = 'CONFIRMED',  'Confirmed'
+        DISPATCHED = 'DISPATCHED', 'Dispatched'
+        COMPLETED  = 'COMPLETED',  'Completed'
+        CANCELLED  = 'CANCELLED',  'Cancelled'
+
     design_number = models.CharField(max_length=100)
     rate          = models.DecimalField(max_digits=10, decimal_places=2)
     date          = models.DateField()
+    status        = models.CharField(max_length=15, choices=Status.choices, default=Status.PENDING)
     buyer         = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,

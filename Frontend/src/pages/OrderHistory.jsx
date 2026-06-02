@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Loader, PackageSearch, MapPin, ExternalLink, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Loader, PackageSearch, MapPin, ExternalLink, CheckCircle2, Filter } from 'lucide-react';
 import api from '../api/axios';
 import TrackingTimelineModal from '../components/shared/TrackingTimelineModal';
 
@@ -113,10 +113,17 @@ const OrderCard = ({ order, onTrack }) => {
       </div>
 
       <div className="px-6 py-3 border-t border-gray-100 dark:border-white/5 flex items-center justify-between gap-2 flex-wrap">
-        <p className="text-gray-400 dark:text-zinc-500 text-xs">
-          {order.items.reduce((s, i) => s + i.quantity, 0)} units
-          {order.payment_method && ` · ${order.payment_method.replace(/_/g, ' ')}`}
-        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-gray-400 dark:text-zinc-500 text-xs">
+            {order.items.reduce((s, i) => s + i.quantity, 0)} units
+            {order.payment_method && ` · ${order.payment_method.replace(/_/g, ' ')}`}
+          </p>
+          {parseFloat(order.balance_due || 0) > 0 && (
+            <span className="text-orange-600 dark:text-orange-400 text-xs font-bold bg-orange-50 dark:bg-orange-400/10 border border-orange-200 dark:border-orange-400/20 px-2 py-0.5 rounded-full">
+              Balance Due: ₹{parseFloat(order.balance_due).toFixed(2)}
+            </span>
+          )}
+        </div>
         {order.shipping_address && (
           <p className="text-gray-400 dark:text-zinc-500 text-xs">{order.shipping_address.city}, {order.shipping_address.state}</p>
         )}
@@ -127,10 +134,29 @@ const OrderCard = ({ order, onTrack }) => {
   );
 };
 
+const STATUS_OPTIONS = [
+  { value: 'ALL',                  label: 'All Statuses' },
+  { value: 'PENDING_VERIFICATION', label: 'Pending Verification' },
+  { value: 'PENDING',              label: 'Pending' },
+  { value: 'APPROVED',             label: 'Approved' },
+  { value: 'SHIPPED',              label: 'Shipped' },
+  { value: 'DELIVERED',            label: 'Delivered' },
+  { value: 'CANCELLED',            label: 'Cancelled' },
+];
+
+const DATE_OPTIONS = [
+  { value: 'ALL', label: 'All Time' },
+  { value: '30',  label: 'Last 30 days' },
+  { value: '90',  label: 'Last 3 months' },
+  { value: '180', label: 'Last 6 months' },
+];
+
 const OrderHistory = () => {
   const [orders, setOrders]               = useState([]);
   const [loading, setLoading]             = useState(true);
   const [trackingOrder, setTrackingOrder] = useState(null);
+  const [statusFilter, setStatusFilter]   = useState('ALL');
+  const [dateFilter, setDateFilter]       = useState('ALL');
 
   useEffect(() => {
     api.get('orders/history/')
@@ -139,15 +165,50 @@ const OrderHistory = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  const filtered = useMemo(() => {
+    return orders.filter(order => {
+      if (statusFilter !== 'ALL' && order.status !== statusFilter) return false;
+      if (dateFilter !== 'ALL') {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - parseInt(dateFilter));
+        if (new Date(order.created_at) < cutoff) return false;
+      }
+      return true;
+    });
+  }, [orders, statusFilter, dateFilter]);
+
+  const selectCls = 'bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-zinc-300 text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-accent transition-colors cursor-pointer';
+
   return (
     <div className="bg-gray-50 dark:bg-zinc-950 min-h-screen px-4 py-10">
       <div className="max-w-5xl mx-auto">
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-gray-900 dark:text-zinc-100 text-3xl font-black">Order History</h1>
           <p className="text-gray-500 dark:text-zinc-400 text-sm mt-1">
             {loading ? '—' : `${orders.length} order${orders.length !== 1 ? 's' : ''} placed`}
           </p>
         </div>
+
+        {!loading && orders.length > 0 && (
+          <div className="flex items-center gap-3 flex-wrap mb-6">
+            <Filter className="w-4 h-4 text-gray-400 dark:text-zinc-500 shrink-0" />
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={selectCls}>
+              {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className={selectCls}>
+              {DATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            {(statusFilter !== 'ALL' || dateFilter !== 'ALL') && (
+              <button onClick={() => { setStatusFilter('ALL'); setDateFilter('ALL'); }}
+                className="text-xs text-accent hover:text-red-700 font-semibold transition-colors">
+                Clear filters
+              </button>
+            )}
+            <span className="text-gray-400 dark:text-zinc-500 text-xs ml-auto">
+              {filtered.length} of {orders.length} orders
+            </span>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-24"><Loader className="animate-spin text-accent w-9 h-9" /></div>
@@ -159,9 +220,20 @@ const OrderHistory = () => {
             <p className="text-gray-900 dark:text-zinc-100 font-bold text-lg">No orders yet</p>
             <p className="text-gray-500 dark:text-zinc-400 text-sm">Your placed orders will appear here.</p>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-zinc-800 flex items-center justify-center">
+              <Filter className="w-8 h-8 text-gray-400 dark:text-zinc-600" />
+            </div>
+            <p className="text-gray-900 dark:text-zinc-100 font-bold text-lg">No orders match your filters</p>
+            <button onClick={() => { setStatusFilter('ALL'); setDateFilter('ALL'); }}
+              className="text-accent hover:text-red-700 text-sm font-semibold transition-colors">
+              Clear filters
+            </button>
+          </div>
         ) : (
           <div className="space-y-5">
-            {orders.map(order => <OrderCard key={order.id} order={order} onTrack={setTrackingOrder} />)}
+            {filtered.map(order => <OrderCard key={order.id} order={order} onTrack={setTrackingOrder} />)}
           </div>
         )}
       </div>

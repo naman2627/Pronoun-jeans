@@ -15,7 +15,9 @@ const EMPTY_ADDRESS = {
 };
 
 const STATUS_COLORS = {
+  pending_verification: 'text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-400/10 dark:border-orange-400/20',
   pending:    'text-yellow-600 bg-yellow-50 border-yellow-200 dark:text-yellow-400 dark:bg-yellow-400/10 dark:border-yellow-400/20',
+  approved:   'text-blue-600   bg-blue-50   border-blue-200   dark:text-blue-400   dark:bg-blue-400/10   dark:border-blue-400/20',
   confirmed:  'text-blue-600   bg-blue-50   border-blue-200   dark:text-blue-400   dark:bg-blue-400/10   dark:border-blue-400/20',
   processing: 'text-blue-600   bg-blue-50   border-blue-200   dark:text-blue-400   dark:bg-blue-400/10   dark:border-blue-400/20',
   shipped:    'text-purple-600 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-400/10 dark:border-purple-400/20',
@@ -125,9 +127,18 @@ const PastOrders = () => {
                     {new Date(order.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </td>
                   <td className="px-6 py-4 text-gray-600 dark:text-zinc-300">{totalQty} units</td>
-                  <td className="px-6 py-4 text-gray-900 dark:text-zinc-100 font-bold">₹{order.grand_total}</td>
                   <td className="px-6 py-4">
-                    <span className={`text-xs font-bold px-3 py-1 rounded-full border capitalize ${statusClass}`}>{order.status}</span>
+                    <p className="text-gray-900 dark:text-zinc-100 font-bold">₹{parseFloat(order.grand_total).toFixed(2)}</p>
+                    {parseFloat(order.balance_due || 0) > 0 && (
+                      <p className="text-orange-600 dark:text-orange-400 text-xs font-semibold mt-0.5">
+                        Balance: ₹{parseFloat(order.balance_due).toFixed(2)}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full border ${statusClass}`}>
+                      {order.status?.replace(/_/g, ' ')}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <button
@@ -172,7 +183,11 @@ const Addresses = () => {
     setForm({ address_line_1: addr.address_line_1, address_line_2: addr.address_line_2 || '', city: addr.city, state: addr.state, pincode: addr.pincode, is_default_shipping: addr.is_default_shipping, is_default_billing: addr.is_default_billing });
     setError(''); setShowForm(true);
   };
-  const handleDelete = async (id) => { await api.delete(`accounts/addresses/${id}/`); fetchAddresses(); };
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this address? This cannot be undone.')) return;
+    await api.delete(`accounts/addresses/${id}/`);
+    fetchAddresses();
+  };
   const handleSubmit = async () => {
     setError('');
     if (!form.address_line_1 || !form.city || !form.state || !form.pincode) { setError('Please fill in all required fields.'); return; }

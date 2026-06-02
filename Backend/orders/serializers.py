@@ -10,15 +10,23 @@ class ProductVariationBriefSerializer(serializers.ModelSerializer):
     color_name    = serializers.SerializerMethodField()
     color_hex     = serializers.SerializerMethodField()
     display_image = serializers.SerializerMethodField()
+    size          = serializers.SerializerMethodField()
+    set_breakdown = serializers.SerializerMethodField()
 
     class Meta:
         model  = ProductVariation
         fields = [
-            'id', 'sku', 'size',
+            'id', 'sku', 'size', 'set_breakdown',
             'color', 'color_name', 'color_hex',
             'b2b_price', 'stock_quantity', 'product_name', 'moq',
             'display_image',
         ]
+
+    def get_size(self, obj):
+        return obj.size_set.name if obj.size_set_id and obj.size_set else ''
+
+    def get_set_breakdown(self, obj):
+        return obj.size_breakdown.breakdown_string if obj.size_breakdown_id and obj.size_breakdown else ''
 
     def get_color_name(self, obj):
         if obj.color_palette:
@@ -98,8 +106,9 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Order
         fields = [
-            'id', 'user', 'status', 'payment_method', 'payment_status',
+            'id', 'user', 'status', 'payment_method', 'payment_status', 'payment_plan',
             'total_amount', 'coupon_code', 'discount_amount', 'upi_discount', 'grand_total',
+            'amount_paid', 'balance_due',
             'shipping_address', 'billing_address',
             'courier_name', 'tracking_number', 'tracking_url',
             'items', 'created_at',
@@ -141,7 +150,7 @@ class SampleOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model  = SampleOrder
         fields = [
-            'id', 'design_number', 'rate', 'date',
+            'id', 'design_number', 'rate', 'date', 'status',
             'buyer', 'buyer_email', 'buyer_company', 'buyer_name',
             'agent', 'agent_email', 'created_at',
         ]
