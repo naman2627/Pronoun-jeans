@@ -99,13 +99,7 @@
         sel.appendChild(opt);
       }
 
-      sel.addEventListener('change', function () {
-        const str = buildBreakdownString(builder);
-        inputEl.value = str;
-        const row      = inputEl.closest('tr, .form-row, div');
-        const labelInp = row ? row.querySelector('input[name*="label"]') : null;
-        if (labelInp) labelInp.value = str;
-      });
+      // change handled by document-level delegation in initSizeSetPage
 
       pill.appendChild(lbl);
       pill.appendChild(sel);
@@ -114,11 +108,11 @@
 
     inputEl.parentNode.insertBefore(builder, inputEl.nextSibling);
 
-    const str = buildBreakdownString(builder);
-    inputEl.value = str;
-    const row      = inputEl.closest('tr, .form-row, div');
-    const labelInp = row ? row.querySelector('input[name*="label"]') : null;
-    if (labelInp) labelInp.value = str;
+    const str      = buildBreakdownString(builder);
+    const initRow  = inputEl.closest('tr, .form-row');
+    const initLbl  = initRow ? initRow.querySelector('input[id*="label"], input[name*="label"]') : null;
+    inputEl.value  = str;
+    if (initLbl) initLbl.value = str;
   }
 
   // ── Refresh all breakdown_string inputs ───────────────────────────────────
@@ -229,10 +223,32 @@
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
+  function attachDelegatedQtyListener() {
+    function onQtyChange(sel) {
+      const builder = sel.closest('.sb-builder');
+      if (!builder) return;
+      const row     = builder.closest('tr, .form-row');
+      const inputEl = row ? row.querySelector('input[id*="breakdown_string"], input[name*="breakdown_string"]') : null;
+      const labelInp = row ? row.querySelector('input[id*="label"], input[name*="label"]') : null;
+      const str = buildBreakdownString(builder);
+      if (inputEl) inputEl.value = str;
+      if (labelInp) labelInp.value = str;
+    }
+
+    if (window.jQuery) {
+      jQuery(document).on('change', '.sb-qty', function () { onQtyChange(this); });
+    } else {
+      document.addEventListener('change', function (e) {
+        if (e.target && e.target.classList.contains('sb-qty')) onQtyChange(e.target);
+      });
+    }
+  }
+
   function initSizeSetPage() {
     injectFromToDropdowns();
     refreshAllBreakdownBuilders();
     observeNewRows();
+    attachDelegatedQtyListener();
   }
 
   function init() {
